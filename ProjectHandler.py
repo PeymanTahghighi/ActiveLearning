@@ -1,0 +1,224 @@
+from shutil import copyfile
+from PyQt5.QtWidgets import QMessageBox
+from pandas.io import pickle
+from Utility import show_dialoge
+import pickle
+import pandas as pd
+from PyQt5.QtCore import QObject, pyqtSignal
+import os
+import Config
+
+class ProjectHandler(QObject):
+
+    open_project_signal = pyqtSignal(dict, bool);
+    set_project_name_signal = pyqtSignal(str);
+    new_project_setup_signal = pyqtSignal();
+
+    def __init__(self):
+        super().__init__();
+        self.__current_project_name = "";
+        self.__projects_root = "";
+
+        #create file to store most recent project
+        if not os.path.exists('mrp.uog'):
+            open('mrp.uog','w');
+        pass
+    
+    @property
+    def current_project_name(self):
+        return self.__current_project_name;
+    
+    @current_project_name.setter
+    def current_project_name(self, name):
+        self.__current_project_name = name;
+
+    ''''
+        Use given path to create a folder for the new project
+        we assume that the name given is the name of project
+    '''
+    def new_project(self, path):
+        proj_name = os.path.basename(path);
+        #Create a folder at the given path
+        os.makedirs(path);
+        #Create all necessary folders for the new project in all folders
+        os.makedirs(os.path.sep.join([path,'images']));
+        os.makedirs(os.path.sep.join([path,'labels']));
+        os.makedirs(os.path.sep.join([path, 'ckpts']));
+        os.makedirs(os.path.sep.join([path, 'evaluation']));
+        os.makedirs(os.path.sep.join([path, 'experiments']));
+
+        #Set most recent project to the currently created one
+        self.__current_project_name = proj_name;
+        Config.PROJECT_NAME = self.__current_project_name;
+        Config.PROJECT_ROOT = path;
+        self.__projects_root = Config.PROJECT_ROOT;
+        self.save_project(dict(), False);
+        self.save_project_meta(list());
+        self.set_project_name_signal.emit(proj_name);
+        self.new_project_setup_signal.emit();
+
+        pass
+
+    def save_project(self, d, show_dialoge_bool = True):
+        df = pd.DataFrame(list(d.items()), columns = ['image_path','state']);
+        df.to_pickle(os.path.sep.join([self.__projects_root, self.__current_project_name + '.uog']));
+        if show_dialoge_bool:
+            show_dialoge(QMessageBox.Icon.Information, f"Successfully saved","Info", QMessageBox.Ok);
+        self.save_most_recent_project();
+        pass
+    
+    def save_project_as(self, path):
+        proj_name = os.path.basename(path);
+        base_path = path[:path.rfind('/')];
+        #Create a folder at the given path
+        os.makedirs(path);
+        #Create all necessary folders for the new project in all folders
+        os.makedirs(os.path.sep.join([path,'images']));
+        os.makedirs(os.path.sep.join([path,'labels']));
+        os.makedirs(os.path.sep.join([path, 'ckpts']));
+        os.makedirs(os.path.sep.join([path, 'evaluation']));
+        os.makedirs(os.path.sep.join([path, 'experiments']));
+
+        #Copy project file name
+        copyfile(os.path.sep.join([self.__projects_root, self.__current_project_name + '.uog']),
+        os.path.sep.join([path,proj_name+'.uog']));
+
+        copyfile(os.path.sep.join([self.__projects_root, self.__current_project_name + '.meta']),
+        os.path.sep.join([path,proj_name+'.meta']));
+
+        #Copy each folder data to the destination folder
+        lstdir = os.listdir(os.path.sep.join([self.__projects_root,'images']));
+        for i in lstdir:
+            copyfile(os.path.sep.join([self.__projects_root,'images',i]), 
+                os.path.sep.join([path,'images',i]))
+        
+        lstdir = os.listdir(os.path.sep.join([self.__projects_root,'labels']));
+        for i in lstdir:
+            copyfile(os.path.sep.join([self.__projects_root,'labels',i]), 
+                os.path.sep.join([path,'labels',i]))
+        
+        lstdir = os.listdir(os.path.sep.join([self.__projects_root,'ckpts']));
+        for i in lstdir:
+            copyfile(os.path.sep.join([self.__projects_root,'ckpts',i]), 
+                os.path.sep.join([path,'ckpts',i]))
+        
+        lstdir = os.listdir(os.path.sep.join([self.__projects_root,'evaluation']));
+        for i in lstdir:
+            copyfile(os.path.sep.join([self.__projects_root,'evaluation',i]), 
+                os.path.sep.join([path,'evaluation',i]))
+        
+        lstdir = os.listdir(os.path.sep.join([self.__projects_root,'experiments']));
+        for i in lstdir:
+            copyfile(os.path.sep.join([self.__projects_root,'experiments',i]), 
+                os.path.sep.join([path,'experiments',i]))
+
+        self.new_project_setup_signal.emit();
+
+        self.__current_project_name = proj_name;
+        Config.PROJECT_NAME = self.__current_project_name;
+        Config.PROJECT_ROOT = path;
+        self.__projects_root = Config.PROJECT_ROOT;
+
+        self.set_project_name_signal.emit(proj_name);
+        dc = pd.read_pickle(os.path.sep.join([path,proj_name + '.uog']));
+        dc = dc.to_dict(orient="list");
+        data_list = dict();
+        for i in range(len(dc['image_path'])):
+            data_list[dc['image_path'][i]] = dc['state'][i];
+        self.open_project_signal.emit(data_list, False);
+
+        show_dialoge(QMessageBox.Icon.Information, f"Project successfully saved to new path","Save succeed", QMessageBox.Ok);
+
+        pass
+
+    def save_project_meta(self, meta):
+        pickle.dump(meta, open(os.path.sep.join([self.__projects_root, self.__current_project_name + '.meta']),'wb'));
+
+    def get_project_meta(self):
+        meta = pickle.load(open(os.path.sep.join([self.__projects_root,   
+        self.__current_project_name + '.meta']),'rb'));
+        return meta;
+    
+    def update_project_meta_slot(self, name):
+        m = self.get_project_meta();
+        if len(m) == 0:
+            m.append([name]);
+        else:
+            m[0].append(name);
+        
+        self.save_project_meta(m);
+    
+    def get_project_names_slot(self):
+        m = self.get_project_meta();
+        if len(m) != 0:
+            for l in m[0]:
+                Config.PROJECT_PREDEFINED_NAMES[0].append(l);
+        pass
+
+    def save_most_recent_project(self):
+        mrp = open('mrp.uog','w');
+        mrp.write(os.path.sep.join([self.__projects_root, self.__current_project_name + '.uog']));
+        mrp.close();
+        pass
+    
+    def open_project(self, path = None):
+        #If no name given, open most recent project
+        if path == None:
+            mrp = open('mrp.uog','r');
+            project_path = mrp.read();
+            if os.path.exists(project_path):
+                #First clear every loaded item from previous project
+                self.new_project_setup_signal.emit();
+                proj_name = os.path.basename(project_path);
+                proj_name = proj_name[:proj_name.rfind('.')];
+                self.__current_project_name = proj_name;
+                self.__projects_root = project_path[:project_path.rfind('\\')];
+                Config.PROJECT_NAME = self.__current_project_name;
+                Config.PROJECT_ROOT = self.__projects_root;
+
+                dc = pd.read_pickle(project_path);
+                dc = dc.to_dict(orient="list");
+                data_list = dict();
+                for i in range(len(dc['image_path'])):
+                    data_list[dc['image_path'][i]] = dc['state'][i];
+                self.open_project_signal.emit(data_list, True);
+                self.set_project_name_signal.emit(proj_name);
+                self.save_most_recent_project();
+
+                return True;
+            else:
+                #If most recent project not found, start a new project.
+                return False;
+        else:
+            if os.path.exists(path):
+                #First clear every loaded item from previous project
+                self.new_project_setup_signal.emit();
+
+                dc = pd.read_pickle(path);
+                dc = dc.to_dict(orient="list");
+                data_list = dict();
+                for i in range(len(dc['image_path'])):
+                    data_list[dc['image_path'][i]] = dc['state'][i];
+                    
+                #We assume that the filename is the project name
+                project_name = os.path.basename(path);
+                project_name = project_name[:project_name.rfind('.')];
+
+                self.__current_project_name = project_name;
+                Config.PROJECT_NAME = self.__current_project_name;
+
+                project_root = path[:path.rfind('/')];
+                Config.PROJECT_ROOT = project_root;
+                self.__projects_root = project_root;
+
+                self.set_project_name_signal.emit(project_name);
+
+                self.open_project_signal.emit(data_list, True);
+
+                #set this project as the most recent project
+                self.save_most_recent_project();
+                
+                return True;
+            else:
+                show_dialoge(QMessageBox.Icon.Critical, f"Project couldn't be found","Error", QMessageBox.Ok);
+        pass
