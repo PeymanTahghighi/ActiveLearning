@@ -173,6 +173,7 @@ class SegmentationOptionsWindow(QWidget):
         self.init_ui();
 
     def init_ui(self):
+        
         centerPoint = QDesktopWidget().availableGeometry().center();
         self.setGeometry(centerPoint.x() - self.width/2, centerPoint.y() - self.height/2, self.width, self.height);
         self.setWindowTitle(self.title);
@@ -215,17 +216,19 @@ class SegmentationOptionsWindow(QWidget):
             self.window_grid_layout.removeWidget(widgetToRemove);
             widgetToRemove.setParent(None);
 
+        
         num_items = 0;
         for n in Config.PROJECT_PREDEFINED_NAMES[0]:
             rbtn = QRadioButton(n);
             if num_items == 0:
                 rbtn.setChecked(True);
+                self.name_selected = rbtn.text();
             rbtn.toggled.connect(lambda:self.btnstate(rbtn))
             self.box_gridLayout.addWidget(rbtn, num_items, 0, 1, 1);
             num_items+=1;
 
-        
         self.box_gridLayout.addWidget(self.custom_name,num_items,0,1,1);
+        self.custom_name.setChecked(False);
 
         self.box_gridLayout.addWidget(self.segmentation_name,num_items,1,1,1);
         num_items+=1;
@@ -239,8 +242,6 @@ class SegmentationOptionsWindow(QWidget):
 
         self.name_gorupbox.setLayout(self.box_gridLayout);
         self.window_grid_layout.addWidget(self.name_gorupbox,0,0,num_items,1);
-
-        #self.window_grid_layout.addWidget(self.verticalSpacer, num_items, 0);
 
         self.adjustSize();
 
@@ -271,9 +272,26 @@ class SegmentationOptionsWindow(QWidget):
         )
         self.color_selected = color.name();
     
+    def check_submit(self):
+        #Check if the selected layer already exists in list or not.
+        found = False;
+        for l in self.layers_name:
+            if l == self.name_selected:
+                found = True;
+                break;
+        if found:
+            show_dialoge(QMessageBox.Icon.Critical, "Layer already exists, use another layer", "Layer exists", QMessageBox.Ok);
+        else:
+            self.hide();
+            self.confirm_clicked_signal.emit(self.name_selected, self.color_selected);
+    
     def confirm_clicked(self):
         if self.custom_name.isChecked() == True:
-            self.name_selected = self.segmentation_name.text();
+            if self.segmentation_name.text() != '':
+                self.name_selected = self.segmentation_name.text();
+            else:
+                show_dialoge(QMessageBox.Icon.Critical, "Label name cannot be empty", "Empty label name", QMessageBox.Ok);
+        
         #Check if the selected layer already exists in list or not.
         found = False;
         for l in self.layers_name:
