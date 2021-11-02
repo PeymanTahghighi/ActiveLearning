@@ -53,9 +53,18 @@ class DataPoolHandler(QObject):
         cnt = 0;
         for p in paths:
             img_name = os.path.basename(p);
-            file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', img_name]);
+            #Check for duplicate file names
+            if img_name in self.data_list.keys():
+                ext = img_name[img_name.rfind('.'):];
+                img_name_wo_ext = img_name[:img_name.rfind('.')];
+                while img_name in self.data_list.keys():
+                    img_name_wo_ext += '_1';
+                    img_name = img_name_wo_ext + ext;
+                
             self.data_list[img_name] = ["unlabeled"];
+
             #Copy all files to project path
+            file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', img_name]);
             copyfile(p,file_new_path);
             cnt += 1;
         show_dialoge(QMessageBox.Icon.Information, f"Total files added: {cnt}", "Info",QMessageBox.Ok)
@@ -68,9 +77,18 @@ class DataPoolHandler(QObject):
         cnt=0;
         for p in lst:
             img_name = os.path.basename(p);
-            file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', img_name]);
+            #Check for duplicate file names
+            if img_name in self.data_list.keys():
+                ext = img_name[img_name.rfind('.'):];
+                img_name_wo_ext = img_name[:img_name.rfind('.')];
+                while img_name in self.data_list.keys():
+                    img_name_wo_ext += '_1';
+                    img_name = img_name_wo_ext + ext;
+                
             self.data_list[img_name] = ["unlabeled"];
+            
             #Copy all files to project path
+            file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', img_name]);
             copyfile(p,file_new_path);
             cnt += 1;
         show_dialoge(QMessageBox.Icon.Information, f"Total files added: {cnt}", "Info",QMessageBox.Ok)
