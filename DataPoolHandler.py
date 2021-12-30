@@ -18,6 +18,7 @@ from shutil import copyfile
 from glob import glob
 import pandas as pd
 import Config
+import pydicom
 #==================================================================
 #==================================================================
 
@@ -43,15 +44,21 @@ class DataPoolHandler(QObject):
     def current_radiograph(self, c):
         self.__current_radiograph = c;
     
+    def get_current_radiograph_type(self):
+        return self.data_list[self.__current_radiograph][1];
+    
     def clear_datalist(self):
         self.data_list.clear();
     
     def set_main_window(self, mw):
         self.main_window = mw;
     
-    def add_from_files(self,paths):
+    def add_from_files(self, paths):
         cnt = 0;
         for p in paths:
+            #Check file format
+            _, ext_file = os.path.splitext(p);
+
             img_name = os.path.basename(p);
             #Check for duplicate file names
             if img_name in self.data_list.keys():
@@ -60,8 +67,14 @@ class DataPoolHandler(QObject):
                 while img_name in self.data_list.keys():
                     img_name_wo_ext += '_1';
                     img_name = img_name_wo_ext + ext;
-                
-            self.data_list[img_name] = ["unlabeled"];
+            #Here, we assume that if the dataset size is one,
+            #the data is NOT in dicom format, otherwise it i
+            ds = pydicom.dcmread(p, force=True);
+            #if data is in dicom format
+            if ext_file == '.dcm' or len(ds) != 1:
+                self.data_list[img_name] = ["unlabeled", "dicom"];
+            else:
+                self.data_list[img_name] = ["unlabeled", "image"];
 
             #Copy all files to project path
             file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', img_name]);
@@ -76,6 +89,8 @@ class DataPoolHandler(QObject):
         lst = glob(folder_path + "/*");
         cnt=0;
         for p in lst:
+            _, ext_file = os.path.splitext(p);
+
             img_name = os.path.basename(p);
             #Check for duplicate file names
             if img_name in self.data_list.keys():
@@ -84,8 +99,15 @@ class DataPoolHandler(QObject):
                 while img_name in self.data_list.keys():
                     img_name_wo_ext += '_1';
                     img_name = img_name_wo_ext + ext;
-                
-            self.data_list[img_name] = ["unlabeled"];
+
+            #Here, we assume that if the dataset size is one,
+            #the data is NOT in dicom format, otherwise it i
+            ds = pydicom.dcmread(p, force=True);
+            #if data is in dicom format
+            if ext_file == '.dcm' or len(ds) != 1:
+                self.data_list[img_name] = ["unlabeled", "dicom"];
+            else:
+                self.data_list[img_name] = ["unlabeled", "image"];
             
             #Copy all files to project path
             file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', img_name]);
@@ -99,7 +121,7 @@ class DataPoolHandler(QObject):
         unlabeled = [];
         for key in self.data_list.keys():
             if self.data_list[key][0] == 'unlabeled':
-                unlabeled.append(key);
+                unlabeled.append([key, self.data_list[key][1]]);
         return unlabeled;
     
     '''
@@ -107,13 +129,17 @@ class DataPoolHandler(QObject):
         name should be the exact name on the disk with extensions so for meta
         we extract file name first
     '''
-    def load_radiograph(self, path):
-        mask_meta_path = os.path.basename(path);
-        mask_meta_path = mask_meta_path[:mask_meta_path.rfind('.')];
+    def load_radiograph(self, name):
+        mask_meta_path = name[:name.rfind('.')];
         mask_meta_path = os.path.sep.join([Config.PROJECT_ROOT, 'labels', mask_meta_path+".meta"])
-        path = os.path.sep.join([Config.PROJECT_ROOT, 'images', path]);
-        r,m = load_radiograph_masks(path,mask_meta_path);
-        return r, m;
+        path = os.path.sep.join([Config.PROJECT_ROOT, 'images', name]);
+        radiograph_type = self.data_list[name][1];
+        if os.path.exists(mask_meta_path):
+            r,m = load_radiograph_masks(path,mask_meta_path, radiograph_type);
+            return r, m;
+        else:
+            r = load_radiograph(path, radiograph_type);
+            return r, list();
 
     def get_all_labeled(self):
         labeled = [];
@@ -132,16 +158,16 @@ class DataPoolHandler(QObject):
         #Randomly select one data
         if len(self.data_list) != 1:
             r = np.random.randint(0,len(unlabeled));
-            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[r]]);
-            pixmap = QtGui.QPixmap(p);
+            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[r][0]]);
+            pixmap = load_radiograph(p, unlabeled[r][1]);
             if pixmap.isNull():
                     print('Cannot open')
                     return
-            self.__current_radiograph = unlabeled[r];
+            self.__current_radiograph = unlabeled[r][0];
         else:
-            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[0]]);
-            pixmap = QtGui.QPixmap(p);
-            self.__current_radiograph = unlabeled[0];
+            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[0][0]]);
+            pixmap = load_radiograph(p, unlabeled[0][1]);
+            self.__current_radiograph = unlabeled[0][0];
         
         return pixmap;
 
@@ -156,22 +182,26 @@ class DataPoolHandler(QObject):
         
         #Randomly select one data
         r = np.random.randint(0,len(unlabeled));
-        while unlabeled[r] == self.__current_radiograph:
+        while unlabeled[r][0] == self.__current_radiograph:
             r = np.random.randint(0,len(unlabeled));
-        p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[r]]);
-        pixmap = QtGui.QPixmap(p);
-        self.__current_radiograph = unlabeled[r];
+        
+        p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[r][0]]);
+        pixmap = load_radiograph(p, unlabeled[r][1]);
+        self.__current_radiograph = unlabeled[r][0];
 
         return pixmap;
+    
+    def delete_radiograph(self, txt):
+        self.data_list.pop(txt);
 
-    def submit_label(self,arr):
+    def submit_label(self,  arr, rot, exp):
         self.data_list[self.__current_radiograph][0] = "labeled";
 
         path_tmp = self.__current_radiograph.replace('\\','/');
         #save label to labels folder and save meta data about radiograph
         file_name = os.path.basename(path_tmp);
         file_name = file_name[0:file_name.find('.')];
-        data_dict = dict();
+        data_dict = dict({'rot' : rot, 'exp': exp});
 
         for l in range(len(arr)):
             layer = arr[l][0];
@@ -195,4 +225,5 @@ class DataPoolHandler(QObject):
         if show:
             show_dialoge(QMessageBox.Icon.Information, f"Loaded successfully", "Info",QMessageBox.Ok)
         self.load_finished_signal.emit();
+    
 #------------------------------------------------------------------

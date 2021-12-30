@@ -2,18 +2,22 @@
 #==================================================================
 from shutil import copy
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtGui import QBrush, QColor, QCursor, QImage, QPixmap, QPainter, QPen
-from PyQt5.QtWidgets import QGraphicsEllipseItem, QGraphicsScene, QGraphicsView, QGraphicsPixmapItem
+from PyQt5.QtGui import QBrush, QColor, QCursor, QImage, QKeyEvent, QKeySequence, QPixmap, QPainter, QPen
+from PyQt5.QtWidgets import QGraphicsEllipseItem, QGraphicsScene, QGraphicsView, QGraphicsPixmapItem, QShortcut
 import numpy as np
 import cv2
 import math
 import copy
+
+from numpy.typing import _16Bit
+
+from utils import pixmap_to_numpy
 #==================================================================
 #==================================================================
 
 #-----------------------------------------------------------------
 class LayerItem(QtWidgets.QGraphicsRectItem):
-    DrawState, EraseState = range(2)
+    DrawState, EraseState, FillState, MagneticLasso = range(4)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -38,6 +42,21 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
         self.redostack = [];
         self.pix_before = None;
 
+        #Grab-cut
+        self.background_gc_layer = None;
+        self.foreground_gc_layer = None;
+        self.mask_gc = None;
+
+        #Magnetic lasso
+        self.__magnetic_lasso_active = False;
+        self.__magnetic_lasso_image_state = None;
+        #image before we start drawing anything,
+        #we use it for cancelation
+        self.__magnetic_lasso_original_image = None;
+        self.__magnetic_lasso_tool = None;
+        self.__magnetic_lasso_undo_list = [];
+        self.__magnetic_lasso_prev_point = None;
+
     @property
     def name(self):
         return self.m_name;
@@ -47,18 +66,38 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
         self.m_name = n;
 
     def reset(self):
-        r = self.parentItem().pixmap().rect()
+        r = self.parentItem().pixmap().rect();
         self.setRect(QtCore.QRectF(r))
         self.m_pixmap = QtGui.QPixmap(r.size())
         self.m_pixmap.fill(QtCore.Qt.transparent)
-        #self.orig = 
+        self.reset_mask_gc();
+    
+    
+    def clear(self):
+        self.m_pixmap.fill(QtCore.Qt.transparent)
+
+    def reset_mask_gc(self):
+        self.mask_gc = np.zeros(shape=(self.m_pixmap.height(), self.m_pixmap.width()), dtype=np.uint8);
+        self.mask_gc[:,:] = cv2.GC_PR_BGD;
+    
+    def reset_lasso_tool(self, pixmap):
+
+        img = pixmap_to_numpy(pixmap);
+        self.__current_image_width = img.shape[1];
+        self.__current_image_height = img.shape[0];
+        
+        self.__magnetic_lasso_tool = cv2.segmentation_IntelligentScissorsMB();
+        self.__magnetic_lasso_tool.setEdgeFeatureCannyParameters(32, 100);
+        self.__magnetic_lasso_tool.setGradientMagnitudeMaxLimit(200);
+        self.__magnetic_lasso_tool.applyImage(img);
+        self.__magnetic_lasso_undo_list.clear();
 
     def paint(self, painter, option, widget=None):
         if self.m_visible:
             #painter.save()
             painter.drawPixmap(QtCore.QPoint(), self.m_pixmap)
             #painter.restore()
-        super().paint(painter, option, widget)
+        super(LayerItem, self).paint(painter, option, widget)
 
     def mousePressEvent(self, event):
         #Update mouse buttons state
@@ -78,11 +117,45 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
             elif self.m_current_state == LayerItem.DrawState:
                 self.m_line_draw.setP1(event.pos())
                 self.m_line_draw.setP2(event.pos())
+            elif self.m_current_state == LayerItem.FillState:
+                self._fill_region(event.pos(), QtGui.QPen(self.pen_color, 1 ,QtCore.Qt.SolidLine, QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin));
+            elif self.m_current_state == LayerItem.MagneticLasso:
+                scene_pos = self.mapToScene(event.pos());
+                if scene_pos.x() > 0 \
+                and scene_pos.y() > 0 \
+                and scene_pos.x() < self.__current_image_width \
+                and scene_pos.y() < self.__current_image_height:
 
-        super().mousePressEvent(event)
-        event.accept()
+                    if self.__magnetic_lasso_active is False\
+                    and scene_pos.x() > 0 \
+                    and scene_pos.y() > 0 \
+                    and scene_pos.x() < self.__current_image_width \
+                    and scene_pos.y() < self.__current_image_height:
+                        self.__magnetic_lasso_tool.buildMap((int(scene_pos.x()), int(scene_pos.y())));
+                        self.__magnetic_lasso_active = True;
+                        self.__magnetic_lasso_image_state = self.m_pixmap.copy(QtCore.QRect());
+                        self.__magnetic_lasso_original_image = self.m_pixmap.copy(QtCore.QRect());
+                        self.__magnetic_lasso_undo_list.append([self.__magnetic_lasso_image_state.copy(QtCore.QRect()), ((int(scene_pos.x()), int(scene_pos.y())))]);
+                        self.__magnetic_lasso_prev_point = (int(scene_pos.x()), int(scene_pos.y()));
+                    else:
+                        self.__magnetic_lasso_tool.buildMap((int(scene_pos.x()), int(scene_pos.y())));
+                        self.__magnetic_lasso_undo_list.append([self.__magnetic_lasso_image_state.copy(QtCore.QRect()), self.__magnetic_lasso_prev_point]);
+                        self.__magnetic_lasso_image_state = self.m_pixmap.copy(QtCore.QRect());
+                        self.__magnetic_lasso_prev_point = (int(scene_pos.x()), int(scene_pos.y()));
+
+        elif self.m_mid_mouse_down and self.m_active and self.m_visible:
+            if self.m_current_state == LayerItem.MagneticLasso:
+                if len(self.__magnetic_lasso_undo_list) != 0:
+                    prev_magnetic_lasso_state = self.__magnetic_lasso_undo_list.pop();
+                    self.__magnetic_lasso_tool.buildMap((prev_magnetic_lasso_state[1][0], prev_magnetic_lasso_state[1][1]));
+                    self.__magnetic_lasso_image_state = prev_magnetic_lasso_state[0];
+                    self.m_pixmap = prev_magnetic_lasso_state[0];
+                    self.update();
         
+        super(LayerItem, self).mousePressEvent(event)
+
     def mouseMoveEvent(self, event):
+        #print(self);
         if self.m_left_mouse_down and self.m_active and self.m_visible:
             if self.m_current_state == LayerItem.EraseState:
                 self._clear(self.mapToScene(event.pos()), QtGui.QPen(self.pen_color, self.pen_thickness,QtCore.Qt.SolidLine, QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin))
@@ -91,34 +164,83 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
                 self._draw_line(
                     self.m_line_draw, QtGui.QPen(self.pen_color, self.pen_thickness,QtCore.Qt.SolidLine, QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin)
                 )
-                self.m_line_draw.setP1(event.pos())
-        super().mouseMoveEvent(event)
+                self.m_line_draw.setP1(event.pos());
+
+        #Magnetic lasso
+        if self.m_current_state == LayerItem.MagneticLasso:
+            scene_pos = self.mapToScene(event.pos());
+            if self.__magnetic_lasso_active is True \
+            and scene_pos.x() > 0 \
+            and scene_pos.y() > 0 \
+            and scene_pos.x() < self.__current_image_width \
+            and scene_pos.y() < self.__current_image_height:
+                image = self.__magnetic_lasso_image_state.toImage();
+                path = self.__magnetic_lasso_tool.getContour((int(scene_pos.x()),int(scene_pos.y())));
+                path = path.squeeze();
+                for p in path:
+                    image.setPixelColor(int(p[0]),int(p[1]), self.pen_color);
+                px = QPixmap();
+                px.convertFromImage(image);
+                self.m_pixmap = px;
+                self.update();
+        #-------------------------------------------------------------
+        super(LayerItem, self).mouseMoveEvent(event)
     
     def mouseReleaseEvent(self, event):
         #Update mouse buttons state
         if event.button() == QtCore.Qt.MouseButton.LeftButton:
             self.m_left_mouse_down = False;
-            self.undostack.append(self.pix_before);
+            #Since we handle undo of magnetic lasso during drawing 
+            #differently, only add to the stack when we are not
+            #in magnetic lasso state
+            if self.m_current_state != LayerItem.MagneticLasso:
+                self.undostack.append(self.pix_before);
 
         elif event.button() == QtCore.Qt.MouseButton.MidButton:
             self.m_mid_mouse_down = False;
         #--------------------------------------------------
 
-        super().mouseReleaseEvent(event)
+        super(LayerItem, self).mouseReleaseEvent(event)
+    
+    def keyPressEvent(self, event: QtGui.QKeyEvent) -> None:
+        if event.key() == QtCore.Qt.Key.Key_Escape:
+            self.cancel_magnetic_lasso();
+        elif event.key() == QtCore.Qt.Key.Key_Enter or event.key() == QtCore.Qt.Key.Key_Return:
+            self.accept_magnetic_lasso();
+        return super().keyPressEvent(event)
+    
+    def undo_event(self):
+        #Since we are handling undo of magnetic lasso differently
+        #do not undo when we are working with this tool
+        if self.m_active and self.m_visible and self.__magnetic_lasso_active is False:
+            if(len(self.undostack) != 0):
+                self.redostack.append(self.m_pixmap.copy(self.m_pixmap.rect()));
+                self.m_pixmap = self.undostack.pop();
+                self.update();
+    
+    def cancel_magnetic_lasso(self):
+        self.__magnetic_lasso_prev_point = None;
+        self.__magnetic_lasso_undo_list.clear();
+        self.__magnetic_lasso_active = False;
+        self.m_pixmap = self.__magnetic_lasso_original_image.copy(QtCore.QRect());
+        self.update();
 
-    def keyPressEvent(self, event):
-        if(self.m_active and self.m_visible):
-            if event.key() == (QtCore.Qt.Key_Control and QtCore.Qt.Key_Y):
-                if(len(self.redostack) != 0):
-                    self.undostack.append(self.m_pixmap.copy(self.m_pixmap.rect()));
-                    self.m_pixmap = self.redostack.pop();
-                    self.update();
-                pass
-            if event.key() == (QtCore.Qt.Key_Control and QtCore.Qt.Key_Z):
-                if(len(self.undostack) != 0):
-                    self.redostack.append(self.m_pixmap.copy(self.m_pixmap.rect()));
-                    self.m_pixmap = self.undostack.pop();
-                    self.update();
+    def accept_magnetic_lasso(self):
+        self.__magnetic_lasso_prev_point = None;
+        self.__magnetic_lasso_undo_list.clear();
+        self.__magnetic_lasso_active = False;
+        self.undostack.append(self.__magnetic_lasso_original_image.copy(QtCore.QRect()));
+        self.m_pixmap = self.__magnetic_lasso_image_state.copy(QtCore.QRect());
+        self.update();
+    
+    def redo_event(self):
+        #Since we are handling undo of magnetic lasso differently
+        #do not undo when we are working with this tool
+        if self.m_active and self.m_visible and self.__magnetic_lasso_active is False:
+            if(len(self.redostack) != 0):
+                self.undostack.append(self.m_pixmap.copy(self.m_pixmap.rect()));
+                self.m_pixmap = self.redostack.pop();
+                self.update();
             
     def _draw_line(self, line, pen):
         painter = QtGui.QPainter(self.m_pixmap)
@@ -127,6 +249,7 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
         #print(line);
         painter.end()
         self.update()
+
 
     def _clear(self, pos, pen):
         painter = QtGui.QPainter(self.m_pixmap)
@@ -139,6 +262,62 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
         #painter.restore()
         painter.end()
         self.update()
+
+    def _get_pixel(self, x , y, pixels, w):
+        i = (x + (y * w)) * 4
+        return pixels[i:i + 3]
+    
+    def _get_cardinal_points(self, have_seen, center_pos, w, h, pixels, rgb):
+        points = []
+        cx, cy = center_pos
+        pix = self._get_pixel(cx , cy, pixels, w);
+        for x, y in [(1, 0), (0, 1), (-1, 0), (0, -1)]:
+            xx, yy = cx + x, cy + y
+            if (xx >= 0 and xx < w and
+                yy >= 0 and yy < h and
+                (xx, yy) not in have_seen):
+                if(rgb[0] != pix[0] or rgb[1] != pix[1] or rgb[2] != pix[2]):
+                    points.append((xx, yy))
+                    have_seen.add((xx, yy))
+
+        return points
+
+    def _fill_region(self, pos, pen):
+        image = self.m_pixmap.toImage();
+        size = image.size();
+        w,h = size.width(), size.height();
+        pixels = image.bits().asstring(w * h * 4);
+
+        pos = QtCore.QPoint(pos.x(), pos.y());
+        queue = [(pos.x(),pos.y())];
+
+        rgb = self.pen_color.getRgb();
+        r,g,b = (rgb[2]), (rgb[1]), (rgb[0]);
+
+        seen = set();
+        painter = QtGui.QPainter(self.m_pixmap);
+        painter.setPen(pen);
+
+        while(len(queue) != 0):
+            #get and fill the current point
+            x,y = queue.pop();
+            painter.drawPoint(QtCore.QPoint(x, y));
+
+            a = self._get_cardinal_points(seen, (x,y), w, h, pixels, [r,g,b]);
+            queue.extend(a);
+
+        painter.end();
+        self.update();
+    
+    def _check_condition(self, p, w, h, pixels, rgb):
+        x,y = p;
+        pix = self._get_pixel(x,y,pixels,w);
+
+        if(x > 0 and x < w and y > 0 and y < h):
+            if(rgb[0] == pix[0] and rgb[1] == pix[1] and rgb[2] == pix[2]):
+                return False;
+            return True;
+        return False;
 
     def get_numpy(self):
         image = self.m_pixmap.toImage()
@@ -161,6 +340,8 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
     @active.setter
     def active(self, b):
         self.m_active = b;
+        self.setActive(b);
+        self.setEnabled(b);
 
     @property
     def visible(self):
@@ -190,7 +371,7 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
 
 #------------------------------------------------------------------
 class MouseLayer(QtWidgets.QGraphicsRectItem):
-    DrawState, EraseState = range(2)
+    DrawState, EraseState, FillState, MagneticLasso = range(4)
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setPen(QtGui.QPen(QtCore.Qt.NoPen))
@@ -248,7 +429,7 @@ class MouseLayer(QtWidgets.QGraphicsRectItem):
                 self._draw_line(
                     self.m_line_draw, QtGui.QPen(self.pen_color, self.pen_thickness,QtCore.Qt.SolidLine, QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin)
                 )
-            else:
+            elif self.m_current_state == self.EraseState:
                 self._draw_rect(pos);
             self.m_line_draw.setP1(pos)
 
@@ -264,7 +445,7 @@ class MouseLayer(QtWidgets.QGraphicsRectItem):
         painter.fillRect(QtCore.QRectF(pos.x()-self.pen_thickness/2,pos.y()-self.pen_thickness/2, self.pen_thickness,self.pen_thickness), QtGui.QBrush(QColor(255,255,255)));
         painter.end()
         self.update()
-    
+
     def keyPressEvent(self, event):
         super().keyPressEvent(event);
 

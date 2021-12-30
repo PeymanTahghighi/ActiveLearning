@@ -12,7 +12,7 @@ from numpy.core.fromnumeric import mean
 from numpy.lib.npyio import load
 from torch.nn.modules.loss import L1Loss
 from torch.utils import data
-from utils import load_checkpoint, save_checkpoint, save_some_examples
+from utils import load_checkpoint, save_checkpoint, save_samples
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -475,7 +475,7 @@ class NetworkTrainer(QObject):
             self.update_train_info_epoch_valid.emit(columns,values);
 
             #Save several examples
-            save_some_examples(self.gen, self.valid_loader, engine.state.epoch, "evaluation");
+            save_samples(self.gen, self.valid_loader, engine.state.epoch, "evaluation");
 
         @self.trainer.on(Events.COMPLETED)
         def train_completed():

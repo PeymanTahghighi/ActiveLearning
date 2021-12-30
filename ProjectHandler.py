@@ -1,6 +1,8 @@
 from shutil import copyfile
 from PyQt5.QtWidgets import QMessageBox
+import cv2
 from pandas.io import pickle
+from pydicom import data
 from Utility import show_dialoge
 import pickle
 import pandas as pd
@@ -60,8 +62,9 @@ class ProjectHandler(QObject):
         pass
 
     def save_project(self, d, show_dialoge_bool = True):
-        df = pd.DataFrame(list(d.items()), columns = ['image_path','state']);
-        df.to_pickle(os.path.sep.join([self.__projects_root, self.__current_project_name + '.uog']));
+        pickle.dump(d,open(os.path.sep.join([self.__projects_root, self.__current_project_name + '.uog']),'wb'));
+        #df = pd.DataFrame(list(d.items()), columns = ['image_path','state', 'type']);
+        #df.to_pickle();
         if show_dialoge_bool:
             show_dialoge(QMessageBox.Icon.Information, f"Successfully saved","Info", QMessageBox.Ok);
         self.save_most_recent_project();
@@ -120,11 +123,12 @@ class ProjectHandler(QObject):
         self.__projects_root = Config.PROJECT_ROOT;
 
         self.set_project_name_signal.emit(proj_name);
-        dc = pd.read_pickle(os.path.sep.join([path,proj_name + '.uog']));
-        dc = dc.to_dict(orient="list");
-        data_list = dict();
-        for i in range(len(dc['image_path'])):
-            data_list[dc['image_path'][i]] = dc['state'][i];
+        data_list = pickle.load(open(os.path.sep.join([path,proj_name + '.uog']),'rb'));
+        # dc = pd.read_pickle(os.path.sep.join([path,proj_name + '.uog']));
+        # dc = dc.to_dict(orient="list");
+        # data_list = dict();
+        # for i in range(len(dc['image_path'])):
+        #     data_list[dc['image_path'][i]] = dc['state'][i];
         self.open_project_signal.emit(data_list, False);
 
         show_dialoge(QMessageBox.Icon.Information, f"Project successfully saved to new path","Save succeed", QMessageBox.Ok);
@@ -176,11 +180,17 @@ class ProjectHandler(QObject):
                 Config.PROJECT_NAME = self.__current_project_name;
                 Config.PROJECT_ROOT = self.__projects_root;
 
-                dc = pd.read_pickle(project_path);
-                dc = dc.to_dict(orient="list");
-                data_list = dict();
-                for i in range(len(dc['image_path'])):
-                    data_list[dc['image_path'][i]] = dc['state'][i];
+                data_list = pickle.load(open(project_path,'rb'));
+                # for k in data_list.keys():
+                #     data_list[k][0] = data_list[k][0][0];
+                # dc = dc.to_dict(orient="list");
+                # data_list = dict();
+                # for i in range(len(dc['image_path'])):
+                #     data_list[dc['image_path'][i]] = [dc['state'][i], 'image'];
+                # data_list.pop('10000004');
+                # data_list.pop('10000003');
+                # data_list.pop('10000005');
+                # self.save_project(data_list, show_dialoge_bool=False);
                 self.open_project_signal.emit(data_list, True);
                 self.set_project_name_signal.emit(proj_name);
                 self.save_most_recent_project();
@@ -194,11 +204,7 @@ class ProjectHandler(QObject):
                 #First clear every loaded item from previous project
                 self.new_project_setup_signal.emit();
 
-                dc = pd.read_pickle(path);
-                dc = dc.to_dict(orient="list");
-                data_list = dict();
-                for i in range(len(dc['image_path'])):
-                    data_list[dc['image_path'][i]] = dc['state'][i];
+                data_list = pickle.load(open(path,'rb'));
                     
                 #We assume that the filename is the project name
                 project_name = os.path.basename(path);

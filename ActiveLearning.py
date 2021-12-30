@@ -4,7 +4,7 @@ from copy import deepcopy
 from posixpath import basename
 from PIL import ImageColor
 from PyQt5.QtCore import QThread, Qt
-from PyQt5.QtWidgets import QApplication, QCheckBox, QColorDialog, QComboBox, QDesktopWidget, QGridLayout, QGroupBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QProgressBar, QPushButton, QRadioButton, QSlider, QFileDialog, QDialog, QStatusBar, QTextEdit, QVBoxLayout
+from PyQt5.QtWidgets import QApplication, QCheckBox, QColorDialog, QComboBox, QDesktopWidget, QGridLayout, QGroupBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QProgressBar, QPushButton, QRadioButton, QScrollArea, QSlider, QFileDialog, QDialog, QStatusBar, QTabBar, QTabWidget, QTextEdit, QVBoxLayout
 import sys
 from PyQt5 import QtGui
 from PyQt5 import QtWidgets
@@ -17,6 +17,7 @@ from PIL.ImageColor import *
 import Config
 import logging
 import traceback
+from CustomWidgets import *
 #==================================================================
 #==================================================================
 
@@ -70,7 +71,7 @@ class TrainingInfoWindow(QWidget):
     def init_ui(self):
 
         centerPoint = QDesktopWidget().availableGeometry().center();
-        self.setGeometry(centerPoint.x() - self.width/2, centerPoint.y()-self.height/2, self.width, self.height);
+        self.setGeometry(int(centerPoint.x() - self.width/2), int(centerPoint.y()-self.height/2), self.width, self.height);
         self.setWindowTitle(self.title);
 
         self.window_grid_layout = QGridLayout(self);
@@ -175,7 +176,7 @@ class SegmentationOptionsWindow(QWidget):
     def init_ui(self):
         
         centerPoint = QDesktopWidget().availableGeometry().center();
-        self.setGeometry(centerPoint.x() - self.width/2, centerPoint.y() - self.height/2, self.width, self.height);
+        self.setGeometry(int(centerPoint.x() - self.width/2), int(centerPoint.y() - self.height/2), self.width, self.height);
         self.setWindowTitle(self.title);
         self.window_grid_layout = QGridLayout(self);
         self.window_grid_layout.setContentsMargins(20,20,20,20);
@@ -462,6 +463,11 @@ class MainWindow(QMainWindow):
     update_meta_signal = pyqtSignal(str);
     get_project_names_signal = pyqtSignal();
     confirm_new_project_clicked_signal = pyqtSignal(str)
+    foreground_clicked_signal = pyqtSignal();
+    background_clicked_signal = pyqtSignal();
+    update_gc_signal = pyqtSignal();
+    reset_gc_signal = pyqtSignal();
+    update_foreground_with_layer_signal = pyqtSignal();
 
     def __init__(self, data_pool_handler, network_trainer):
         super().__init__();
@@ -479,33 +485,37 @@ class MainWindow(QMainWindow):
         self.select_files_icon = "Icons/select_files_icon.png";
         self.draw_icon = "Icons/draw_icon.png";
         self.erase_icon = "Icons/erase_icon.png";
+        self.fill_icon = "Icons/fill-icon.png";
         self.save_icon = "Icons/save_icon.ico";
         self.save_as_icon = "Icons/save_as_icon.png";
         self.open_project_icon = "Icons/open_project_icon.ico";
         self.new_project_icon = "Icons/new_project_icon.png";
+        self.undo_icon = "Icons/Undo_Icon.png";
+        self.redo_icon = "Icons/Redo_Icon.png";
         self.data_pool_handler = data_pool_handler;
         self.network_trainer = network_trainer;
         self.segmentation_options_window = SegmentationOptionsWindow();
         self.layer_selection_window = LayerSelectionWindow();
         self.trainig_info_window = TrainingInfoWindow();
         self.busy_indicator_window = WaitingWindow();
+        self.background_gc_selected = False;
+        self.foreground_gc_selected = True;
+        self.erase_gc_selected = False;
         #---------------------------------------------------------------
 
         self.th = QThread();
         self.network_trainer.moveToThread(self.th);
         self.th.start();
-        #self.th.started.connect(self.network_trainer.start_train_slot);
 
         self.init_ui();
 
     def init_ui(self):
         #Find best location
         centerPoint = QDesktopWidget().availableGeometry();
-        pos_x = (centerPoint.width() - self.width) / 2;
-        pos_y = (centerPoint.height() - self.height) / 2;
+        pos_x = int((centerPoint.width() - self.width) / 2);
+        pos_y = int((centerPoint.height() - self.height) / 2);
         
         self.setGeometry(pos_x, pos_y, self.width, self.height);
-        #self.setGeometry(self.left, self.top , self.width, self.height);
         self.setWindowTitle(self.title);
 
         self.centralwidget = QtWidgets.QWidget(self)
@@ -513,7 +523,7 @@ class MainWindow(QMainWindow):
 
         self.gridLayout = QtWidgets.QGridLayout(self.centralwidget)
         self.gridLayout.setContentsMargins(20,20,20,20);
-
+        
         #MenuBar
         self.menubar = self.menuBar();
         self.file_menu = self.menubar.addMenu("File");
@@ -539,162 +549,314 @@ class MainWindow(QMainWindow):
         self.save_action.setIcon(QtGui.QIcon(self.save_icon));
         self.save_as_action = self.toolbar.addAction("Save As",self.save_as_slot);
         self.save_as_action.setIcon(QtGui.QIcon(self.save_as_icon));
+        self.undo_action = self.toolbar.addAction("Undo",self.undo_slot);
+        self.undo_action.setIcon(QtGui.QIcon(self.undo_icon));
+        self.redo_action = self.toolbar.addAction("Redo",self.redo_slot);
+        self.redo_action.setIcon(QtGui.QIcon(self.redo_icon));
         #-------------------------------------------------
-        
-        #Column 0
-        self.box_train_params = QGroupBox();
-        self.box_train_params.setTitle("Train parameters")
-        self.box_train_grid = QGridLayout();
-        items_column1 = 0;   
-        
-        self.device_label = QLabel(self);
-        self.device_label.setText("Device");
-        self.box_train_grid.addWidget(self.device_label,1,0,1,1);
-        items_column1+=1;
 
-        self.box_train_params.setLayout(self.box_train_grid);
-        self.gridLayout.addWidget(self.box_train_params,0,0,items_column1,2);
+        self.box_layers = QGroupBox();
+        self.box_layers.setTitle("Layers")
+        self.layers_box_grid_layout = QGridLayout();
 
-        self.box_segmentation = QGroupBox();
-        self.box_segmentation.setTitle("Segmentation")
-        self.segmentation_box_grid_layout = QGridLayout();
+
+        self.box_manual_segmentation = QWidget();
+        self.manual_segmentation_grid_layout = QGridLayout();
+
+        self.box_automatic_segmentation = QWidget();
+        self.automatic_segmentation_grid_layout = QGridLayout();
+
+        self.box_radiograph_manipulation = QGroupBox();
+        self.box_radiograph_manipulation.setTitle("Manipulation")
+        self.radiograph_manipulation_box_grid_layout = QGridLayout();
+
+        self.box_layers_control = QGroupBox();
+        self.box_layers_control.setTitle("Layer control")
+        self.layers_control_grid_layout = QGridLayout();
 
         self.box_image_processing = QGroupBox();
         self.box_image_processing.setTitle("Image processing");
         self.box_image_processing_layout = QGridLayout();
 
+        self.box_quality_labels_params = QGroupBox();
+        self.box_quality_labels_params.setTitle("Qaulity labels")
+        self.box_quality_labels_grid = QGridLayout();
+        
+        self.segmentation_box_tab = QTabWidget();
+        stylesheet = """ 
+        QTabBar::tab {
+            background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                stop: 0 #E1E1E1, stop: 0.4 #DDDDDD,
+                                stop: 0.5 #D8D8D8, stop: 1.0 #D3D3D3);
+            border: 2px solid #C4C4C3;
+            border-bottom-color: #C2C7CB; /* same as the pane color */
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+            min-width: 8ex;
+            padding: 2px;
+            }
+        QTabBar::tab:selected, QTabBar::tab:hover {
+        background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                                stop: 0 #fafafa, stop: 0.4 #f4f4f4,
+                                stop: 0.5 #e7e7e7, stop: 1.0 #fafafa);
+        }
+
+
+            """
+        self.segmentation_box_tab.setStyleSheet(stylesheet)
+        
+        #Quality
+        items_count = 0;   
+        
+        self.rotation_label = QLabel(self);
+        self.rotation_label.setText("Rotation");
+        self.box_quality_labels_grid.addWidget(self.rotation_label,0,0,1,1);
+        items_count+=1;
+
+        self.exposure_label = QLabel(self);
+        self.exposure_label.setText("Exposure");
+        self.box_quality_labels_grid.addWidget(self.exposure_label,1,0,1,1);
+        items_count+=1;
+
+        self.rotation_combo_box = QComboBox(self);
+        self.rotation_combo_box.addItem("Mild");
+        self.rotation_combo_box.addItem("Moderate");
+        self.rotation_combo_box.addItem("Marked");
+        self.rotation_combo_box.addItem("Normal");
+        self.box_quality_labels_grid.addWidget(self.rotation_combo_box,0,1,1,1);
+
+        self.exposure_combo_box = QComboBox(self);
+        self.exposure_combo_box.addItem("Normal");
+        self.exposure_combo_box.addItem("Underexposed-mild");
+        self.exposure_combo_box.addItem("Underexposed-moderate");
+        self.exposure_combo_box.addItem("Underexposed-marked");
+        self.exposure_combo_box.addItem("Overexposed-mild");
+        self.exposure_combo_box.addItem("Overexposed-moderate");
+        self.exposure_combo_box.addItem("Overexposed-marked");
+        self.box_quality_labels_grid.addWidget(self.exposure_combo_box,1,1,1,1);
+
+        self.box_quality_labels_params.setLayout(self.box_quality_labels_grid);
+        self.gridLayout.addWidget(self.box_quality_labels_params,0,0,items_count,2);
+        #-------------------------------------------------------------------------
+
+        #Layers box
+        next_start = items_count;
+        items_count = 0;
         self.add_segmentation_button = QPushButton(self);
         self.add_segmentation_button.setText("Add");
-        self.segmentation_box_grid_layout.addWidget(self.add_segmentation_button, 0, 0, 1, 1);
+        self.layers_box_grid_layout.addWidget(self.add_segmentation_button, items_count, 0, 1, 1);
 
         self.delete_segmentation_button = QPushButton(self);
         self.delete_segmentation_button.setText("Delete");
-        self.segmentation_box_grid_layout.addWidget(self.delete_segmentation_button, 0, 1, 1, 1);
-        items_column1+=1;
+        self.layers_box_grid_layout.addWidget(self.delete_segmentation_button, items_count, 1, 1, 1);
+        items_count+=1;
 
         self.segments_list = QListWidget(self);
-        self.segmentation_box_grid_layout.addWidget(self.segments_list,1,0,1,2);
-        items_column1+=1;
+        self.layers_box_grid_layout.addWidget(self.segments_list,items_count,0,1,2);
+        items_count+=1;
 
+        self.box_layers.setLayout(self.layers_box_grid_layout);
+        self.gridLayout.addWidget(self.box_layers, next_start, 0, items_count, 2);
+        #-------------------------------------------------------------------
+
+        #Manual segmentation items
+        next_start += items_count;
+        items_count = 0;
         self.paint_button = QPushButton();
         self.paint_button.setText("Paint");
         self.paint_button.setStyleSheet("background-color: Aquamarine")
         self.paint_button.setIcon(QtGui.QIcon(self.draw_icon))
-        self.segmentation_box_grid_layout.addWidget(self.paint_button, 2, 0, 1, 1);
+        self.manual_segmentation_grid_layout.addWidget(self.paint_button, items_count, 0, 1, 1);
 
         self.erase_button = QPushButton();
         self.erase_button.setText("Erase");
         self.erase_button.setStyleSheet("background-color: white")
         self.erase_button.setIcon(QtGui.QIcon(self.erase_icon))
-        self.segmentation_box_grid_layout.addWidget(self.erase_button, 2, 1, 1, 1);
-        items_column1+=1;
+        self.manual_segmentation_grid_layout.addWidget(self.erase_button, items_count, 1, 1, 1);
+        items_count+=1;
 
+        self.fill_button = QPushButton();
+        self.fill_button.setText("Fill");
+        self.fill_button.setStyleSheet("background-color: white")
+        self.fill_button.setIcon(QtGui.QIcon(self.fill_icon))
+        self.manual_segmentation_grid_layout.addWidget(self.fill_button, items_count, 0, 1, 1);
+
+        self.magnetic_scissor_button = QPushButton();
+        self.magnetic_scissor_button.setText("Magnetic Scissor");
+        self.magnetic_scissor_button.setStyleSheet("background-color: white")
+        self.magnetic_scissor_button.setIcon(QtGui.QIcon(self.fill_icon))
+        self.manual_segmentation_grid_layout.addWidget(self.magnetic_scissor_button, items_count, 1, 1, 1);
+        items_count+=1;
+
+        self.box_manual_segmentation.setLayout(self.manual_segmentation_grid_layout);
+        self.segmentation_box_tab.addTab(self.box_manual_segmentation, 'Manual segmentation')
+
+        #------------------------------------------------------------------
+
+        #automatic segmentation items
+        #next_start += items_count;
+        items_count = 0;
+        self.foreground_button = QPushButton();
+        self.foreground_button.setText("Foreground");
+        self.foreground_button.clicked.connect(self.foreground_clicked);
+        self.foreground_button.setStyleSheet("background-color: white");
+        self.automatic_segmentation_grid_layout.addWidget(self.foreground_button, items_count, 0, 1, 1);
+
+        self.background_button = QPushButton();
+        self.background_button.setText("Background");
+        self.background_button.setStyleSheet("background-color: white")
+        self.background_button.clicked.connect(self.background_clicked);
+        self.automatic_segmentation_grid_layout.addWidget(self.background_button, items_count, 1, 1, 1);
+        items_count+=1;
+
+        self.erase_gc_button = QPushButton();
+        self.erase_gc_button.setText("Erase");
+        self.erase_gc_button.setStyleSheet("background-color: white")
+        self.erase_gc_button.setIcon(QtGui.QIcon(self.erase_icon))
+        self.automatic_segmentation_grid_layout.addWidget(self.erase_gc_button, items_count, 0, 1, 1);
+
+        self.update_gc_button = QPushButton();
+        self.update_gc_button.setText("Update segmentation");
+        self.update_gc_button.clicked.connect(self.update_gc_clicked);
+        self.automatic_segmentation_grid_layout.addWidget(self.update_gc_button, items_count, 1, 1, 1);
+        items_count+=1;
+
+        self.reset_gc = QPushButton();
+        self.reset_gc.setText("Reset");
+        self.reset_gc.clicked.connect(self.reset_gc_clicked);
+        self.automatic_segmentation_grid_layout.addWidget(self.reset_gc, items_count, 0, 1, 1);
+
+        self.update_foreground_with_layer_button = QPushButton();
+        self.update_foreground_with_layer_button.setText("Update foreground");
+        self.update_foreground_with_layer_button.setWhatsThis("Update foreground layer with what you've already drawn on the radiograph. This will automatically remove anything you already drew as the foreground")
+        self.update_foreground_with_layer_button.clicked.connect(self.update_foreground_with_layer_clicked);
+        self.automatic_segmentation_grid_layout.addWidget(self.update_foreground_with_layer_button, items_count, 1, 1, 1);
+
+        self.foreground_button.setStyleSheet("background-color: Aquamarine")
+        self.background_button.setStyleSheet("background-color: White")
+        self.erase_gc_button.setStyleSheet("background-color: White")
+
+        self.box_automatic_segmentation.setLayout(self.automatic_segmentation_grid_layout);
+        self.segmentation_box_tab.addTab(self.box_automatic_segmentation, 'Automatic segmentation')
+        #self.scroll_area_automatic_segmentation.setWidget(self.box_automatic_segmentation);
+        #self.scroll_area_automatic_segmentation.setFixedHeight(250);
+
+        #------------------------------------------------------------------
+
+        self.gridLayout.addWidget(self.segmentation_box_tab, next_start, 0, items_count, 2);
+
+        #layers control box
+        next_start = self.gridLayout.rowCount();
+        items_count = 0;
         self.size_label = QLabel(self);
         self.size_label.setText("Brush size: 150");
-        self.segmentation_box_grid_layout.addWidget(self.size_label, 3, 0, 1, 1);
-        items_column1+=1;
+        self.layers_control_grid_layout.addWidget(self.size_label, items_count, 0, 1, 1);
+        items_count+=1;
 
         self.size_slider = QSlider(Qt.Orientation.Horizontal);
         self.size_slider.setMinimum(1);
         self.size_slider.setMaximum(Config.MAX_PEN_SIZE);
         self.size_slider.setValue(150);
-        self.segmentation_box_grid_layout.addWidget(self.size_slider, 4,0,1,2);
-        items_column1+=1;
+        self.layers_control_grid_layout.addWidget(self.size_slider, items_count,0,1,2);
+        items_count+=1;
 
         self.opacity_layer_label = QLabel(self);
         self.opacity_layer_label.setText("Layer Opacity: 255");
-        self.segmentation_box_grid_layout.addWidget(self.opacity_layer_label, 5, 0, 1, 1);
-        items_column1+=1;
+        self.layers_control_grid_layout.addWidget(self.opacity_layer_label, items_count, 0, 1, 1);
+        items_count+=1;
 
         self.opacity_layer_slider = QSlider(Qt.Orientation.Horizontal);
         self.opacity_layer_slider.setMinimum(0);
         self.opacity_layer_slider.setMaximum(255);
         self.opacity_layer_slider.setValue(255);
-        self.segmentation_box_grid_layout.addWidget(self.opacity_layer_slider, 6,0,1,2);
-        items_column1+=1;
+        self.layers_control_grid_layout.addWidget(self.opacity_layer_slider, items_count,0,1,2);
+        items_count+=1;
 
         self.opacity_marker_label = QLabel(self);
         self.opacity_marker_label.setText("Marker Opacity: 255");
-        self.segmentation_box_grid_layout.addWidget(self.opacity_marker_label, 7, 0, 1, 1);
-        items_column1+=1;
+        self.layers_control_grid_layout.addWidget(self.opacity_marker_label, items_count, 0, 1, 1);
+        items_count+=1;
 
         self.opacity_marker_slider = QSlider(Qt.Orientation.Horizontal);
         self.opacity_marker_slider.setMinimum(0);
         self.opacity_marker_slider.setMaximum(255);
         self.opacity_marker_slider.setValue(255);
-        self.segmentation_box_grid_layout.addWidget(self.opacity_marker_slider, 8,0,1,2);
-        items_column1+=1;
+        self.layers_control_grid_layout.addWidget(self.opacity_marker_slider, items_count,0,1,2);
+        items_count+=1;
 
+        self.box_layers_control.setLayout(self.layers_control_grid_layout);
+        self.gridLayout.addWidget(self.box_layers_control, next_start, 0, items_count, 2);
+        #-----------------------------------------------------------
+
+        #Box radiograph manipulation
+        next_start = self.gridLayout.rowCount();
+        items_count = 0;
         self.next_sample_button = QPushButton();
         self.next_sample_button.setText("Next Sample");
-        self.segmentation_box_grid_layout.addWidget(self.next_sample_button, 9, 0, 1, 1);
+        self.radiograph_manipulation_box_grid_layout.addWidget(self.next_sample_button, items_count, 0, 1, 1);
 
         self.submit_label_button = QPushButton();
         self.submit_label_button.setText("Submit Label");
-        self.segmentation_box_grid_layout.addWidget(self.submit_label_button, 9, 1, 1, 1);
-        items_column1+=1;
+        self.radiograph_manipulation_box_grid_layout.addWidget(self.submit_label_button, items_count, 1, 1, 1);
+        items_count+=1;
 
         self.update_model_button = QPushButton();
         self.update_model_button.setText("Update Model");
-        self.segmentation_box_grid_layout.addWidget(self.update_model_button, 10, 0, 1, 1);
+        self.radiograph_manipulation_box_grid_layout.addWidget(self.update_model_button, items_count, 0, 1, 1);
 
         self.predict_button = QPushButton();
         self.predict_button.setText("Predict");
-        self.segmentation_box_grid_layout.addWidget(self.predict_button, 10, 1, 1, 1);
-        items_column1+=1;
+        self.radiograph_manipulation_box_grid_layout.addWidget(self.predict_button, items_count, 1, 1, 1);
+        items_count+=1;
 
-        self.editable_segments_label = QLabel();
-        self.editable_segments_label.setText("Labeled radiographs");
-        self.segmentation_box_grid_layout.addWidget(self.editable_segments_label, 11, 0, 1, 1);
-        items_column1+=1;
+        self.radiographs_list_label = QLabel();
+        self.radiographs_list_label.setText("All radiographs");
+        self.radiograph_manipulation_box_grid_layout.addWidget(self.radiographs_list_label, items_count, 0, 1, 1);
+        items_count+=1;
 
-        self.editable_segments_list = QListWidget();
-        self.segmentation_box_grid_layout.addWidget(self.editable_segments_list, 12, 0, 1, 2);
-        items_column1+=1;
+        self.all_radiographs_list = QListWidget();
+        self.radiograph_manipulation_box_grid_layout.addWidget(self.all_radiographs_list, items_count, 0, 1, 2);
+        items_count+=1;
         
-        self.box_segmentation.setLayout(self.segmentation_box_grid_layout);
-        self.gridLayout.addWidget(self.box_segmentation,1,0,items_column1,2);
-        
+        self.box_radiograph_manipulation.setLayout(self.radiograph_manipulation_box_grid_layout);
+        self.gridLayout.addWidget(self.box_radiograph_manipulation,next_start,0,items_count, 2);
+        #----------------------------------------------------------------
 
+        #Image processing
+        next_start += items_count;
+        items_count = 0;
         self.clahe_slider = QSlider(Qt.Orientation.Horizontal);
         self.clahe_slider.setMinimum(0);
-        self.clahe_slider.setMaximum(23);
+        self.clahe_slider.setMaximum(50);
         self.clahe_slider.setValue(0);
-        self.box_image_processing_layout.addWidget(self.clahe_slider, items_column1, 0,1,2);
+        self.box_image_processing_layout.addWidget(self.clahe_slider, items_count, 0,1,2);
         self.box_image_processing.setLayout(self.box_image_processing_layout);
-        items_column1+=1;
+        items_count+=1;
 
         self.clip_limit_slider = QSlider(Qt.Orientation.Horizontal);
         self.clip_limit_slider.setMinimum(0);
-        self.clip_limit_slider.setMaximum(23);
+        self.clip_limit_slider.setMaximum(50);
         self.clip_limit_slider.setValue(0);
-        self.box_image_processing_layout.addWidget(self.clip_limit_slider, items_column1, 0,1,2);
+        self.box_image_processing_layout.addWidget(self.clip_limit_slider, items_count, 0,1,2);
         self.box_image_processing.setLayout(self.box_image_processing_layout);
-        items_column1+=1;
+        items_count+=1;
 
-        self.gridLayout.addWidget(self.box_image_processing, items_column1, 0, 2, 2);
-        #-------------------------------------------------------------
-        
-        #Column 1
-        self.train_combo_box = QComboBox(self);
-        self.train_combo_box.addItem("Cuda");
-        self.train_combo_box.addItem("Cpu");
-        self.box_train_grid.addWidget(self.train_combo_box,1,1,1,1);
+        self.gridLayout.addWidget(self.box_image_processing, next_start, 0, items_count, 2);
         #-------------------------------------------------------------
 
         #Row contraction
         self.verticalSpacer = QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding) 
-        self.gridLayout.addItem(self.verticalSpacer, items_column1, 0);
+        self.gridLayout.addItem(self.verticalSpacer, items_count, 0);
         #--------------------------------------------------------------
 
-        #Graphics views in column 3 and 4
+        #Graphics views
         self.radiograph_view = RadiographViewer(self);
-        self.gridLayout.addWidget(self.radiograph_view, 0, 2, items_column1+1, 2)
+        self.gridLayout.addWidget(self.radiograph_view, 0, 2, self.gridLayout.rowCount(), 2)
         
 
         self.radiograph_label = QLabel();
         self.radiograph_label.setText("Radiograph");
-        self.gridLayout.addWidget(self.radiograph_label, items_column1+1,2,1,1);
+        self.gridLayout.addWidget(self.radiograph_label, self.gridLayout.rowCount()+1,2,1,1);
         #-------------------------------------------------------------
 
         #Statusbar
@@ -716,9 +878,11 @@ class MainWindow(QMainWindow):
         #Connect signals to slots
         self.delete_segmentation_button.clicked.connect(self.delete_segmentation);
         self.segments_list.itemClicked.connect(self.list_item_changed);
-        self.editable_segments_list.itemDoubleClicked.connect(self.editable_sgement_item_selected);
         self.paint_button.clicked.connect(self.paint_clicked);
         self.erase_button.clicked.connect(self.erase_clicked);
+        self.erase_gc_button.clicked.connect(self.erase_gc_clicked);
+        self.fill_button.clicked.connect(self.fill_clicked);
+        self.magnetic_scissor_button.clicked.connect(self.magnetic_scissor_clicked);
         self.next_sample_button.clicked.connect(self.next_sample_clicked);
         self.submit_label_button.clicked.connect(self.submit_label_clicked);
         self.update_model_button.clicked.connect(self.update_model_clicked);
@@ -731,6 +895,7 @@ class MainWindow(QMainWindow):
         self.add_segmentation_button.clicked.connect(self.add_segmentation_clicked);
         self.segmentation_options_window.confirm_clicked_signal.connect(self.add_segmentation_slot);
         self.layer_selection_window.confirm_clicked_signal.connect(self.confirm_labels_clicked);
+        self.segmentation_box_tab.currentChanged.connect(self.segmentation_tab_changed);
         #-------------------------------------------------------------
 
         self.gridLayout.setColumnStretch(0,1);
@@ -742,6 +907,8 @@ class MainWindow(QMainWindow):
     def get_next_unlabeled(self):
         self.radiograph_view.clear_whole();
         pixmap = self.data_pool_handler.next_unlabeled();
+        #Update name
+        self.radiograph_label.setText(f"Radiograph Name: {self.data_pool_handler.current_radiograph}")
         if pixmap is not None:
             self.radiograph_view.set_image(pixmap);
             #clear all segmentations
@@ -774,14 +941,32 @@ class MainWindow(QMainWindow):
         unlabeled = len(self.data_pool_handler.get_all_unlabeled());
         self.file_info_label_status_bar.setText(f'Total radiographs: {total}\tTotal labeled: {total - unlabeled}');
 
-    def update_editable_segments_list(self):
+    def update_all_radiographs_segments_list(self):
         #First clear the list
-        self.editable_segments_list.clear();
+        self.all_radiographs_list.clear();
         #Update the list of available already labeled radiographs
         dl = self.data_pool_handler.data_list;
         for r in dl.keys():
             if dl[r][0] == 'labeled':
-                self.editable_segments_list.addItem(r);
+                list_item_meta = LabelledRadListItem();
+                list_item_meta.set_name(r, '(0,0,255)')
+                list_item_meta.set_status('Labeled' ,'(0,255,0)')
+                list_item_meta.open_radiograph_signal.connect(self.load_radiograph_slot);
+                list_item_meta.delete_radiograph_signal.connect(self.delete_radiograph_slot);
+                list_widget_item = QListWidgetItem(self.all_radiographs_list);
+                list_widget_item.setSizeHint(list_item_meta.sizeHint())
+                self.all_radiographs_list.addItem(list_widget_item);
+                self.all_radiographs_list.setItemWidget(list_widget_item, list_item_meta);
+            elif dl[r][0] == 'unlabeled':
+                list_item_meta = LabelledRadListItem();
+                list_item_meta.set_name(r, '(0,0,255)')
+                list_item_meta.set_status('Unlabeled','(255,0,0)');
+                list_item_meta.open_radiograph_signal.connect(self.load_radiograph_slot);
+                list_item_meta.delete_radiograph_signal.connect(self.delete_radiograph_slot);
+                list_widget_item = QListWidgetItem(self.all_radiographs_list);
+                list_widget_item.setSizeHint(list_item_meta.sizeHint())
+                self.all_radiographs_list.addItem(list_widget_item);
+                self.all_radiographs_list.setItemWidget(list_widget_item, list_item_meta);
     
     def submit_label(self):
         #Aggregate all layers and submit
@@ -794,12 +979,12 @@ class MainWindow(QMainWindow):
             layers.append([lbl,name]);
 
         #Submit all layers and save meta data
-        self.data_pool_handler.submit_label(layers);
+        self.data_pool_handler.submit_label(layers, self.rotation_combo_box.currentText(), self.exposure_combo_box.currentText());
             
         self.save_project(False);
         self.get_next_unlabeled();
         self.update_file_info_label();
-        self.update_editable_segments_list();
+        self.update_all_radiographs_segments_list();
     
     def closeEvent(self, event):
         #Save most recent project first.
@@ -816,23 +1001,141 @@ class MainWindow(QMainWindow):
         return_value = msgBox.exec()
         if return_value == QMessageBox.Yes:
             self.save_project(False);
+    
+    def automatic_segmentation_enable(self):
+        for i in range(self.segments_list.count()):
+            itm = self.segments_list.item(i);
+            if itm.checkState() == QtCore.Qt.Checked:
+                self.radiograph_view.set_gc_layers_visibility(True, i);
+            else:
+                self.radiograph_view.set_gc_layers_visibility(False, i);
 
+        #Disable regular layer as we don't want it to be affected.
+        #self.radiograph_view.set_layer_active(False);
+        #self.radiograph_view.set_layer_visibility(False);
+
+        self.radiograph_view.deactive_all_layers();
+        self.radiograph_view.hide_all_layers();
+
+        if self.background_gc_selected:
+            self.radiograph_view.set_gc_layer_active(True, type=1);
+        elif self.foreground_gc_selected:
+            self.radiograph_view.set_gc_layer_active(True, type=0);
+        
+        if self.erase_gc_selected is True:
+            self.radiograph_view.set_state(LayerItem.EraseState);
+        
+        #Check if satate is erase from manual segmentation, then activate
+        #erase grabcut button
+        if self.radiograph_view.get_state() == LayerItem.EraseState:
+            self.paint_button.setStyleSheet("background-color: white")
+            self.erase_gc_button.setStyleSheet("background-color: Aquamarine")
+            self.fill_button.setStyleSheet("background-color: white")
+    
+    def manual_segmentation_enable(self):
+        #Enable regular layer as we don't want it to be affected.
+        for i in range(self.radiograph_view.layer_count):
+            self.radiograph_view.set_gc_layer_active(False,i);
+            self.radiograph_view.set_gc_layers_visibility(False,i);
+
+        self.radiograph_view.set_layer_active(True);
+        
+        for i in range(self.segments_list.count()):
+            itm = self.segments_list.item(i);
+            if itm.checkState() == QtCore.Qt.Checked:
+                self.radiograph_view.set_layer_visibility(True, i);
+            else:
+                self.radiograph_view.set_layer_visibility(False, i);
+
+    
+        #By default make paint enabled
+        self.paint_button.setStyleSheet("background-color: Aquamarine")
+        self.erase_button.setStyleSheet("background-color: white")
+        self.fill_button.setStyleSheet("background-color: white")
+        self.magnetic_scissor_button.setStyleSheet("background-color: white")
+        self.radiograph_view.set_state(LayerItem.DrawState);
+    
+    def load_radiograph_slot(self, txt):
+        radiograph_pixmap, mask_pixmap_list = self.data_pool_handler.load_radiograph(txt);
+        self.data_pool_handler.current_radiograph = txt;
+        self.radiograph_label.setText(f"Radiograph Name: {self.data_pool_handler.current_radiograph}")
+        self.radiograph_view.clear_whole();
+        self.segments_list.clear();
+
+        #Load radiograph view with all items
+        self.radiograph_view.set_image(radiograph_pixmap);
+        for m in range(len(mask_pixmap_list)):
+            item = QListWidgetItem();
+            item.setCheckState(QtCore.Qt.Checked)
+            item.setIcon(QtGui.QIcon(self.open_eye_icon))
+            
+            item.setText(mask_pixmap_list[m][0]);
+            self.segments_list.addItem(item);
+            self.segments_list.setCurrentItem(item);
+            color = getrgb(mask_pixmap_list[m][1]);
+            self.radiograph_view.add_layer(mask_pixmap_list[m][0], color);
+            self.radiograph_view.set_layer_pixmap(m, mask_pixmap_list[m][2]);  
+        
+        self.radiograph_view.set_layer_opacity(self.opacity_layer_slider.value());
+    
+    def delete_radiograph_slot(self,txt):
+        msgBox = QMessageBox()
+        msgBox.setIcon(QMessageBox.Icon.Warning)
+        msgBox.setText("Are you sure? you won't be able to undo this operation.")
+        msgBox.setWindowTitle("Delete confirmation")
+        msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+
+        return_value = msgBox.exec()
+
+        #We first just try to load the mode. If the loading is successful, we start the prediction.
+        if return_value == QMessageBox.Yes:
+            self.data_pool_handler.delete_radiograph(txt);
+            self.update_all_radiographs_segments_list();
+            self.update_file_info_label();
+            #Update current radiograph if we deleted current one
+            if self.data_pool_handler.current_radiograph == txt:
+                self.get_next_unlabeled();
     #Slots
     def list_item_changed(self,item):
         if item.checkState() == QtCore.Qt.Checked:
             item.setIcon(QtGui.QIcon(self.open_eye_icon))
             idx = self.segments_list.row(item);
-            self.radiograph_view.set_layer_visibility(idx, True)
+
+            if self.segmentation_box_tab.currentIndex() == 0:
+                self.radiograph_view.set_layer_visibility(True, idx)
+            if self.segmentation_box_tab.currentIndex() == 1:
+                self.radiograph_view.set_gc_layers_visibility(True, idx);
+                #self.radiograph_view.set_gc_layers_visibility(True, idx);
+
+
         elif item.checkState() == QtCore.Qt.Unchecked:
             idx = self.segments_list.row(item);
-            self.radiograph_view.set_layer_visibility(idx, False)
+
+            if self.segmentation_box_tab.currentIndex() == 0:
+                self.radiograph_view.set_layer_visibility(False, idx)
+            if self.segmentation_box_tab.currentIndex() == 1:
+                self.radiograph_view.set_gc_layers_visibility(False, idx);
+                
             item.setIcon(QtGui.QIcon(self.close_eye_icon))
-            
+        
         idx = self.segments_list.currentRow();
-        self.radiograph_view.set_active_layer(idx);
+        #deactive current selected layer
+        if self.segmentation_box_tab.currentIndex() == 0:
+            self.radiograph_view.set_layer_active(False, idx = self.radiograph_view.get_active_layer_index());
+            self.radiograph_view.set_active_layer_index(idx);
+            self.radiograph_view.set_layer_active(True, idx);
+        elif self.segmentation_box_tab.currentIndex() == 1:
+            if self.background_gc_selected is True:
+                self.radiograph_view.set_gc_layer_active(False, self.radiograph_view.get_active_layer_index());
+                self.radiograph_view.set_active_layer_index(idx);
+                self.radiograph_view.set_gc_layer_active(True, idx, 1);
+            else:
+                self.radiograph_view.set_gc_layer_active(False , self.radiograph_view.get_active_layer_index());
+                self.radiograph_view.set_active_layer_index(idx);
+                self.radiograph_view.set_gc_layer_active(True, idx, 0);
 
         #set slider opacity value to the opacity of the selected layer.
-        self.opacity_layer_slider.setValue(self.radiograph_view.get_active_layer().opacity() * 255);
+        self.opacity_layer_slider.setValue(int(self.radiograph_view.get_active_layer().opacity() * 255));
         
     def size_value_changed(self, val):
         self.size_label.setText(f"Brush size: {val}");
@@ -902,6 +1205,13 @@ class MainWindow(QMainWindow):
         color = getrgb(color);
         
         self.radiograph_view.add_layer(name, color);
+
+        if self.segmentation_box_tab.currentIndex() == 1:
+            if self.foreground_gc_selected is True:
+                self.radiograph_view.set_gc_layer_active(True, self.radiograph_view.get_active_layer_index(), 0);
+            else:
+                self.radiograph_view.set_gc_layer_active(True, self.radiograph_view.get_active_layer_index(), 1);
+
         self.opacity_layer_slider.setValue(255);
 
     def delete_segmentation(self):
@@ -925,9 +1235,16 @@ class MainWindow(QMainWindow):
             #Always select index 0 after deletation of a layer
             #First check if we have layer left
             if self.radiograph_view.layer_count != 0:
-                #self.segments_list.setCurrentRow(0);
+                self.segments_list.setCurrentRow(0);
                 idx = self.segments_list.currentRow();
-                self.radiograph_view.set_active_layer(idx);
+                self.radiograph_view.set_active_layer_index(idx);
+                if self.segmentation_box_tab.currentIndex() == 0:
+                    self.radiograph_view.set_layer_active(True, idx);
+                else:
+                    if self.background_gc_selected is True:
+                        self.radiograph_view.set_gc_layer_active(True, idx, 1);
+                    elif self.foreground_gc_selected is True:
+                        self.radiograph_view.set_gc_layer_active(True, idx, 0);
             #If we don't have any layers left, change mouse color to white
             else:
                 self.radiograph_view.m_mouse_layer.pen_color = QtGui.QColor(255,255,255);
@@ -936,17 +1253,16 @@ class MainWindow(QMainWindow):
         self.update_file_info_label();
 
         #Update the list of available already labeled radiographs
-        dl = self.data_pool_handler.data_list;
-        for r in dl.keys():
-            if dl[r][0] == 'labeled':
-                self.editable_segments_list.addItem(r);
+        self.update_all_radiographs_segments_list()
     
         #Load and set a random image from unlabeled data pool
         pixmap = self.data_pool_handler.load_random_unlabeled();
+        self.radiograph_label.setText(f"Radiograph Name: {self.data_pool_handler.current_radiograph}")
         if pixmap is not None:
             self.radiograph_view.set_image(pixmap);
 
     def next_sample_clicked(self):
+        
         if self.radiograph_view.layer_count != 0:
             msgBox = QMessageBox()
             msgBox.setIcon(QMessageBox.Icon.Warning)
@@ -983,14 +1299,40 @@ class MainWindow(QMainWindow):
     def paint_clicked(self):
         self.paint_button.setStyleSheet("background-color: Aquamarine")
         self.erase_button.setStyleSheet("background-color: white")
+        self.fill_button.setStyleSheet("background-color: white")
+        self.magnetic_scissor_button.setStyleSheet("background-color: white")
         self.radiograph_view.set_state(LayerItem.DrawState);
-        pass
     
     def erase_clicked(self):
         self.erase_button.setStyleSheet("background-color: Aquamarine")
         self.paint_button.setStyleSheet("background-color: white")
+        self.fill_button.setStyleSheet("background-color: white")
+        self.magnetic_scissor_button.setStyleSheet("background-color: white")
         self.radiograph_view.set_state(LayerItem.EraseState);
-        pass
+    
+    def erase_gc_clicked(self):
+        if self.erase_gc_selected is False:
+            self.erase_gc_button.setStyleSheet("background-color: Aquamarine")
+            self.radiograph_view.set_state(LayerItem.EraseState);
+            self.erase_gc_selected = True;
+        else:
+            self.erase_gc_button.setStyleSheet("background-color: White")
+            self.radiograph_view.set_state(LayerItem.DrawState);
+            self.erase_gc_selected = False;
+
+    def fill_clicked(self):
+        self.fill_button.setStyleSheet("background-color: Aquamarine");
+        self.erase_button.setStyleSheet("background-color: white");
+        self.paint_button.setStyleSheet("background-color: white");
+        self.magnetic_scissor_button.setStyleSheet("background-color: white");
+        self.radiograph_view.set_state(LayerItem.FillState);
+
+    def magnetic_scissor_clicked(self):
+        self.fill_button.setStyleSheet("background-color: white");
+        self.erase_button.setStyleSheet("background-color: white");
+        self.paint_button.setStyleSheet("background-color: white");
+        self.magnetic_scissor_button.setStyleSheet("background-color: Aquamarine");
+        self.radiograph_view.set_state(LayerItem.MagneticLasso);
 
     def update_model_clicked(self):
         #Remove all files in predictions
@@ -1049,7 +1391,7 @@ class MainWindow(QMainWindow):
             self.segments_list.addItem(item);
             self.segments_list.setCurrentItem(item);
 
-            self.radiograph_view.add_layer(layer_names[l], getrgb(Config.PREDEFINED_COLORS[l]));
+            self.radiograph_view.add_layer(layer_names[l], Config.PREDEFINED_COLORS[l]);
 
             height, width, _ = layers[l].shape
 
@@ -1084,7 +1426,7 @@ class MainWindow(QMainWindow):
         self.radiograph_view.clear_whole();
         self.data_pool_handler.clear_datalist();
         self.segments_list.clear();
-        self.editable_segments_list.clear();
+        self.all_radiographs_list.clear();
         self.update_file_info_label();
     
     def open_project_slot(self):
@@ -1103,49 +1445,13 @@ class MainWindow(QMainWindow):
             path = dialog.selectedFiles()[0];
             self.open_project_signal.emit(path);
     
-    def editable_sgement_item_selected(self, item):
-        #We add items in list by their name in disk, so we only read names and load image with labels.
-        radiograph_pixmap, mask_pixmap_list = self.data_pool_handler.load_radiograph(item.text());
-        self.data_pool_handler.current_radiograph = item.text();
-        self.radiograph_view.clear_whole();
-        self.segments_list.clear();
-
-        #Load radiograph view with all items
-        self.radiograph_view.set_image(radiograph_pixmap);
-        for m in range(len(mask_pixmap_list)):
-            item = QListWidgetItem();
-            item.setCheckState(QtCore.Qt.Checked)
-            item.setIcon(QtGui.QIcon(self.open_eye_icon))
-            
-            item.setText(mask_pixmap_list[m][0]);
-            self.segments_list.addItem(item);
-            self.segments_list.setCurrentItem(item);
-            color = getrgb(mask_pixmap_list[m][1]);
-            self.radiograph_view.add_layer(mask_pixmap_list[m][0], color);
-            self.radiograph_view.set_layer_pixmap(m, mask_pixmap_list[m][2]);  
-        
-        self.radiograph_view.set_layer_opacity(self.opacity_layer_slider.value());
     def save_as_slot(self):
         name = QFileDialog.getSaveFileName(self, 'Save File');
         self.save_project_as_signal.emit(name[0]);
     
     def clahe_value_changed(self):
-        radiograph_image = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'images', self.data_pool_handler.current_radiograph]),cv2.IMREAD_GRAYSCALE);
-        if self.clahe_slider.value() > 0:
-            clahe = cv2.createCLAHE(self.clip_limit_slider.value(),(self.clahe_slider.value(),self.clahe_slider.value()));
-            radiograph_image = clahe.apply(radiograph_image);
-            height, width = radiograph_image.shape
+        radiograph_image = self.radiograph_view.pixels[:,:,:1].squeeze();
 
-            bytesPerLine = 1 * width
-            qImg = QImage(radiograph_image, width, height, bytesPerLine, QImage.Format_Grayscale8)
-            pixmap = QPixmap.fromImage(qImg);
-            self.radiograph_view.set_image(pixmap, reset=False);
-        else:
-            pixmap = QPixmap(os.path.sep.join([Config.PROJECT_ROOT, 'images', self.data_pool_handler.current_radiograph]));
-            self.radiograph_view.set_image(pixmap, reset=False);
-    
-    def clip_limit_value_changed(self):
-        radiograph_image = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'images', self.data_pool_handler.current_radiograph]),cv2.IMREAD_GRAYSCALE);
         if self.clip_limit_slider.value() > 0 and self.clahe_slider.value() > 0:
             clahe = cv2.createCLAHE(self.clip_limit_slider.value(),(self.clahe_slider.value(),self.clahe_slider.value()));
             radiograph_image = clahe.apply(radiograph_image);
@@ -1156,13 +1462,77 @@ class MainWindow(QMainWindow):
             pixmap = QPixmap.fromImage(qImg);
             self.radiograph_view.set_image(pixmap, reset=False);
         else:
-            pixmap = QPixmap(os.path.sep.join([Config.PROJECT_ROOT, 'images', self.data_pool_handler.current_radiograph]));
+            pixmap = load_radiograph(os.path.sep.join([Config.PROJECT_ROOT, 'images', self.data_pool_handler.current_radiograph]),
+            self.data_pool_handler.get_current_radiograph_type());
             self.radiograph_view.set_image(pixmap, reset=False);
+
+    def clip_limit_value_changed(self):
+        radiograph_image = self.radiograph_view.pixels[:,:,:1].squeeze();
+        if self.clip_limit_slider.value() > 0 and self.clahe_slider.value() > 0:
+            clahe = cv2.createCLAHE(self.clip_limit_slider.value(),(self.clahe_slider.value(),self.clahe_slider.value()));
+            radiograph_image = clahe.apply(radiograph_image);
+            height, width = radiograph_image.shape
+
+            bytesPerLine = 1 * width
+            qImg = QImage(radiograph_image, width, height, bytesPerLine, QImage.Format_Grayscale8)
+            pixmap = QPixmap.fromImage(qImg);
+            self.radiograph_view.set_image(pixmap, reset=False);
+        else:
+            pixmap = load_radiograph(os.path.sep.join([Config.PROJECT_ROOT, 'images', self.data_pool_handler.current_radiograph]),
+            self.data_pool_handler.get_current_radiograph_type());
+            self.radiograph_view.set_image(pixmap, reset=False);
+    
+    def foreground_clicked(self):
+        if self.foreground_gc_selected is False:
+            self.foreground_button.setStyleSheet("background-color: Aquamarine")
+            self.background_button.setStyleSheet("background-color: White")
+            self.erase_gc_button.setStyleSheet("background-color: White")
+            self.foreground_clicked_signal.emit();
+            self.foreground_gc_selected = True;
+            self.background_gc_selected = False;
+            self.erase_gc_selected = False; 
+            self.radiograph_view.set_state(LayerItem.DrawState);
+    
+    def background_clicked(self):
+        if self.background_gc_selected is False:
+            self.background_button.setStyleSheet("background-color: Aquamarine")
+            self.foreground_button.setStyleSheet("background-color: White")
+            self.erase_gc_button.setStyleSheet("background-color: White")
+            self.background_clicked_signal.emit();
+            self.background_gc_selected = True;
+            self.foreground_gc_selected = False;
+            self.erase_gc_selected = False;
+            self.radiograph_view.set_state(LayerItem.DrawState);
+    
+    def update_gc_clicked(self):
+        self.update_gc_signal.emit();
+    
+    def reset_gc_clicked(self):
+        self.reset_gc_signal.emit();
+
+    def segmentation_tab_changed(self, idx):
+        #if we moved to automatic segmentation tab
+        if idx == 1:
+            self.automatic_segmentation_enable();
+            pass
+        #if we moved to manual segmentation tabl
+        if idx == 0:
+            self.manual_segmentation_enable();
+            pass
+    
+    def update_foreground_with_layer_clicked(self):
+        self.update_foreground_with_layer_signal.emit();
+    
+    def undo_slot(self):
+        self.radiograph_view.undo_event();
+    
+    def redo_slot(self):
+        self.radiograph_view.redo_event();
 
     #--------------------------------------------------------------
     
 if __name__=='__main__':
-   # DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
     app = QApplication(sys.argv);
     app.setStyleSheet("QPushButton {\
     background-color : white;\
@@ -1170,13 +1540,13 @@ if __name__=='__main__':
     border-width: 1px;\
     border-radius: 10px;\
     border-color: beige;\
-    font: 12px;\
+    font: 15px;\
     min-width: 9em;\
     padding: 8px;\
     }\
     QListView {\
     background-color : HoneyDew;\
-    font: 15px;\
+    font: 16px;\
     }\
     QPushButton:pressed { background-color: azure; font: 14px;}");
 
@@ -1253,6 +1623,11 @@ if __name__=='__main__':
     network_trainer.augmentation_finished_signal.connect(window.trainig_info_window.augmentation_finished_slot);
     window.trainig_info_window.terminate_signal.connect(network_trainer.terminate_slot);
     network_trainer.model_loaded_finished.connect(window.model_loaded_finished_slot);
+    window.foreground_clicked_signal.connect(window.radiograph_view.foreground_clicked_slot);
+    window.background_clicked_signal.connect(window.radiograph_view.background_clicked_slot);
+    window.update_gc_signal.connect(window.radiograph_view.update_gc_slot);
+    window.reset_gc_signal.connect(window.radiograph_view.reset_gc_slot);
+    window.update_foreground_with_layer_signal.connect(window.radiograph_view.update_foreground_with_layer_slot);
 
     ret = project_handler.open_project();
     

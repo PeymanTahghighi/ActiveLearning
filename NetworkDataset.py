@@ -79,8 +79,8 @@ class OfflineAugmentation():
         sometimes = lambda aug: iaa.Sometimes(0.5, aug);
         self.seq = iaa.Sequential([
             #iaa.Affine(rotate=(-30, 30)),
-            iaa.ShearY((-20,20)),
-            iaa.ShearX((-20,20)),
+            iaa.ShearY((-40,40)),
+            iaa.ShearX((-40,40)),
             
             
         ], random_order=True)
@@ -142,7 +142,7 @@ class OfflineAugmentation():
             radiograph_list.append(rad_path);
             mask_list.append(mask_path);
 
-            for k in range(10):
+            for k in range(0):
                 image_aug, segmap_aug = self.seq(image=radiograph_image, segmentation_maps=segmap);
                 segmap_aug_arr = segmap_aug.arr;
 
@@ -222,6 +222,8 @@ class NetworkDataset(Dataset):
         radiograph_image = cv2.imread(radiograph_image_path,cv2.IMREAD_GRAYSCALE);
         clahe = cv2.createCLAHE(7,(11,11));
         radiograph_image = clahe.apply(radiograph_image);
+        radiograph_image = np.expand_dims(radiograph_image, axis=2);
+        radiograph_image = np.repeat(radiograph_image, 3,axis=2);
        
         # for j in range(1,7):
         #     for i in range(3,11,2):
