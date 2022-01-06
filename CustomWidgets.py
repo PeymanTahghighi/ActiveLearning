@@ -19,7 +19,8 @@ class LabelledRadListItem (QWidget):
         self.delete_button = QPushButton('Delete');
         self.delete_button.clicked.connect(self.delete_radiograph_slot);
         self.grid_layout.addWidget(self.open_button,0,2,1,1)
-        self.grid_layout.addWidget(self.delete_button,1,2,1,1);
+        self.open_button.setFixedWidth(5)
+        self.grid_layout.addWidget(self.delete_button,0,3,1,1);
         self.grid_layout.setHorizontalSpacing(3);
         self.setLayout(self.grid_layout)
         

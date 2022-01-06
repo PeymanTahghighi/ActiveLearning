@@ -492,6 +492,7 @@ class MainWindow(QMainWindow):
         self.new_project_icon = "Icons/new_project_icon.png";
         self.undo_icon = "Icons/Undo_Icon.png";
         self.redo_icon = "Icons/Redo_Icon.png";
+        self.scissor_icon = "Icons/Scissor_Icon.png";
         self.data_pool_handler = data_pool_handler;
         self.network_trainer = network_trainer;
         self.segmentation_options_window = SegmentationOptionsWindow();
@@ -684,7 +685,7 @@ class MainWindow(QMainWindow):
         self.magnetic_scissor_button = QPushButton();
         self.magnetic_scissor_button.setText("Magnetic Scissor");
         self.magnetic_scissor_button.setStyleSheet("background-color: white")
-        self.magnetic_scissor_button.setIcon(QtGui.QIcon(self.fill_icon))
+        self.magnetic_scissor_button.setIcon(QtGui.QIcon(self.scissor_icon))
         self.manual_segmentation_grid_layout.addWidget(self.magnetic_scissor_button, items_count, 1, 1, 1);
         items_count+=1;
 
@@ -816,6 +817,7 @@ class MainWindow(QMainWindow):
 
         self.all_radiographs_list = QListWidget();
         self.radiograph_manipulation_box_grid_layout.addWidget(self.all_radiographs_list, items_count, 0, 1, 2);
+        self.all_radiographs_list.setFixedHeight(110)
         items_count+=1;
         
         self.box_radiograph_manipulation.setLayout(self.radiograph_manipulation_box_grid_layout);
@@ -1056,27 +1058,36 @@ class MainWindow(QMainWindow):
         self.radiograph_view.set_state(LayerItem.DrawState);
     
     def load_radiograph_slot(self, txt):
-        radiograph_pixmap, mask_pixmap_list = self.data_pool_handler.load_radiograph(txt);
-        self.data_pool_handler.current_radiograph = txt;
-        self.radiograph_label.setText(f"Radiograph Name: {self.data_pool_handler.current_radiograph}")
-        self.radiograph_view.clear_whole();
-        self.segments_list.clear();
+        msgBox = QMessageBox()
+        msgBox.setIcon(QMessageBox.Icon.Warning)
+        msgBox.setText("If you open this sample, you won't be able to undo this operation. Do you want to continue?")
+        msgBox.setWindowTitle("Next Sample Confirmation")
+        msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
 
-        #Load radiograph view with all items
-        self.radiograph_view.set_image(radiograph_pixmap);
-        for m in range(len(mask_pixmap_list)):
-            item = QListWidgetItem();
-            item.setCheckState(QtCore.Qt.Checked)
-            item.setIcon(QtGui.QIcon(self.open_eye_icon))
+        return_value = msgBox.exec();
+        if return_value == QMessageBox.Yes:
+            radiograph_pixmap, mask_pixmap_list = self.data_pool_handler.load_radiograph(txt);
+            self.data_pool_handler.current_radiograph = txt;
+            self.radiograph_label.setText(f"Radiograph Name: {self.data_pool_handler.current_radiograph}")
+            self.radiograph_view.clear_whole();
+            self.segments_list.clear();
+
+            #Load radiograph view with all items
+            self.radiograph_view.set_image(radiograph_pixmap);
+            for m in range(len(mask_pixmap_list)):
+                item = QListWidgetItem();
+                item.setCheckState(QtCore.Qt.Checked)
+                item.setIcon(QtGui.QIcon(self.open_eye_icon))
+                
+                item.setText(mask_pixmap_list[m][0]);
+                self.segments_list.addItem(item);
+                self.segments_list.setCurrentItem(item);
+                color = getrgb(mask_pixmap_list[m][1]);
+                self.radiograph_view.add_layer(mask_pixmap_list[m][0], color);
+                self.radiograph_view.set_layer_pixmap(m, mask_pixmap_list[m][2]);
+                
             
-            item.setText(mask_pixmap_list[m][0]);
-            self.segments_list.addItem(item);
-            self.segments_list.setCurrentItem(item);
-            color = getrgb(mask_pixmap_list[m][1]);
-            self.radiograph_view.add_layer(mask_pixmap_list[m][0], color);
-            self.radiograph_view.set_layer_pixmap(m, mask_pixmap_list[m][2]);  
-        
-        self.radiograph_view.set_layer_opacity(self.opacity_layer_slider.value());
+            self.radiograph_view.set_layer_opacity(self.opacity_layer_slider.value());
     
     def delete_radiograph_slot(self,txt):
         msgBox = QMessageBox()
