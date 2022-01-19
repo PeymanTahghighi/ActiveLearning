@@ -1,6 +1,6 @@
 import torch
 
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEVICE = "cpu"
 LEARNING_RATE = 5e-5
 BATCH_SIZE = 6
 NUM_WORKERS = 1

@@ -481,8 +481,9 @@ class MainWindow(QMainWindow):
         self.height = 600;
         self.close_eye_icon = "Icons/eye_icon_closed.png";
         self.open_eye_icon = "Icons/eye_icon.png"
-        self.select_folder_icon = "Icons/select_folder_icon.png";
-        self.select_files_icon = "Icons/select_files_icon.png";
+        self.folder_icon = "Icons/folder_icon.png";
+        self.dicom_folder_icon = "Icons/dicom_folder_icon.png";
+        self.files_icon = "Icons/files_icon.png";
         self.draw_icon = "Icons/draw_icon.png";
         self.erase_icon = "Icons/erase_icon.png";
         self.fill_icon = "Icons/fill-icon.png";
@@ -532,28 +533,31 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction('Open project', self.open_project_slot);
         self.file_menu.addAction('Save project', self.save_clicked_slot);
         self.file_menu.addAction('Save as project', self.save_as_slot);
-        self.file_menu.addAction("Select folder",self.select_folder_slot);
-        self.file_menu.addAction("Select files",self.select_files_slot);
+        self.file_menu.addAction("Open folder",self.open_folder_slot);
+        self.file_menu.addAction("Open DICOM folder",self.open_dicom_folder_slot);
+        self.file_menu.addAction("Open files",self.select_files_slot);
         #-------------------------------------------------
 
         #Toolbar
         self.toolbar = self.addToolBar('top_toolbar');
-        self.new_project_action = self.toolbar.addAction('New project', self.new_project_slot);
-        self.new_project_action.setIcon(QtGui.QIcon(self.new_project_icon));
-        self.open_project_action = self.toolbar.addAction('Open project', self.open_project_slot);
-        self.open_project_action.setIcon(QtGui.QIcon(self.open_project_icon));
-        self.select_folder_action = self.toolbar.addAction("Select folder",self.select_folder_slot);
-        self.select_folder_action.setIcon(QtGui.QIcon(self.select_folder_icon));
-        self.select_files_action = self.toolbar.addAction("Select files",self.select_files_slot);
-        self.select_files_action.setIcon(QtGui.QIcon(self.select_files_icon));
-        self.save_action = self.toolbar.addAction("Save",self.save_clicked_slot);
-        self.save_action.setIcon(QtGui.QIcon(self.save_icon));
-        self.save_as_action = self.toolbar.addAction("Save As",self.save_as_slot);
-        self.save_as_action.setIcon(QtGui.QIcon(self.save_as_icon));
-        self.undo_action = self.toolbar.addAction("Undo",self.undo_slot);
-        self.undo_action.setIcon(QtGui.QIcon(self.undo_icon));
-        self.redo_action = self.toolbar.addAction("Redo",self.redo_slot);
-        self.redo_action.setIcon(QtGui.QIcon(self.redo_icon));
+        new_project_action = self.toolbar.addAction('New project', self.new_project_slot);
+        new_project_action.setIcon(QtGui.QIcon(self.new_project_icon));
+        open_project_action = self.toolbar.addAction('Open project', self.open_project_slot);
+        open_project_action.setIcon(QtGui.QIcon(self.open_project_icon));
+        select_folder_action = self.toolbar.addAction("Open folder",self.open_folder_slot);
+        select_folder_action.setIcon(QtGui.QIcon(self.folder_icon));
+        select_dicom_folder_action = self.toolbar.addAction("Open DICOM folder",self.open_dicom_folder_slot);
+        select_dicom_folder_action.setIcon(QtGui.QIcon(self.dicom_folder_icon));
+        select_files_action = self.toolbar.addAction("Open files",self.select_files_slot);
+        select_files_action.setIcon(QtGui.QIcon(self.files_icon));
+        save_action = self.toolbar.addAction("Save",self.save_clicked_slot);
+        save_action.setIcon(QtGui.QIcon(self.save_icon));
+        save_as_action = self.toolbar.addAction("Save As",self.save_as_slot);
+        save_as_action.setIcon(QtGui.QIcon(self.save_as_icon));
+        undo_action = self.toolbar.addAction("Undo",self.undo_slot);
+        undo_action.setIcon(QtGui.QIcon(self.undo_icon));
+        redo_action = self.toolbar.addAction("Redo",self.redo_slot);
+        redo_action.setIcon(QtGui.QIcon(self.redo_icon));
         #-------------------------------------------------
 
         self.box_layers = QGroupBox();
@@ -654,6 +658,7 @@ class MainWindow(QMainWindow):
 
         self.segments_list = QListWidget(self);
         self.layers_box_grid_layout.addWidget(self.segments_list,items_count,0,1,2);
+        self.segments_list.setMinimumHeight(100);
         items_count+=1;
 
         self.box_layers.setLayout(self.layers_box_grid_layout);
@@ -1163,7 +1168,7 @@ class MainWindow(QMainWindow):
         self.opacity_marker_label.setText(f"Marker Opacity: {val}");
         self.radiograph_view.set_mouse_layer_opacity(val);
 
-    def select_folder_slot(self):
+    def open_folder_slot(self):
         options = QFileDialog.Options()
         dialog = QFileDialog()
         dialog.setOptions(options)
@@ -1178,6 +1183,22 @@ class MainWindow(QMainWindow):
         if dialog.exec_() == QDialog.Accepted:
             paths = dialog.selectedFiles()[0];
             self.data_pool_handler.add_from_folder(paths);
+    
+    def open_dicom_folder_slot(self):
+        options = QFileDialog.Options()
+        dialog = QFileDialog()
+        dialog.setOptions(options)
+
+        dialog.setFilter(dialog.filter() | QtCore.QDir.Hidden)
+
+        dialog.setFileMode(QFileDialog.DirectoryOnly)
+
+        dialog.setAcceptMode(QFileDialog.AcceptOpen);
+        dialog.setDirectory(QtCore.QDir.currentPath())
+
+        if dialog.exec_() == QDialog.Accepted:
+            paths = dialog.selectedFiles()[0];
+            self.data_pool_handler.add_from_dicom_folder(paths);
     
     def select_files_slot(self):
         options = QFileDialog.Options()
