@@ -2,9 +2,10 @@
 #==================================================================
 from copy import deepcopy
 from posixpath import basename
+from re import I
 from PIL import ImageColor
 from PyQt5.QtCore import QThread, Qt
-from PyQt5.QtWidgets import QApplication, QCheckBox, QColorDialog, QComboBox, QDesktopWidget, QGridLayout, QGroupBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QProgressBar, QPushButton, QRadioButton, QScrollArea, QSlider, QFileDialog, QDialog, QStatusBar, QTabBar, QTabWidget, QTextEdit, QVBoxLayout
+from PyQt5.QtWidgets import QSizePolicy, QApplication, QCheckBox, QColorDialog, QComboBox, QDesktopWidget, QGridLayout, QGroupBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QProgressBar, QPushButton, QRadioButton, QScrollArea, QSlider, QFileDialog, QDialog, QStatusBar, QTabBar, QTabWidget, QTextEdit, QVBoxLayout
 import sys
 from PyQt5 import QtGui
 from PyQt5 import QtWidgets
@@ -477,8 +478,8 @@ class MainWindow(QMainWindow):
         self.title = "Active Learning";
         self.left = 0;
         self.top = 0;
-        self.width = 1200;
-        self.height = 600;
+        self.width = 1500;
+        self.height = 800;
         self.close_eye_icon = "Icons/eye_icon_closed.png";
         self.open_eye_icon = "Icons/eye_icon.png"
         self.folder_icon = "Icons/folder_icon.png";
@@ -559,11 +560,16 @@ class MainWindow(QMainWindow):
         redo_action = self.toolbar.addAction("Redo",self.redo_slot);
         redo_action.setIcon(QtGui.QIcon(self.redo_icon));
         #-------------------------------------------------
+        
+        menu_content = QtWidgets.QWidget();
+        menu_panel_scroll_area = QScrollArea();
+        menu_panel_scroll_area.setWidgetResizable(True);
+        menu_panel_layout = QVBoxLayout(menu_content);
 
-        self.box_layers = QGroupBox();
-        self.box_layers.setTitle("Layers")
+        self.box_layers = CollapsibleBox("Layers");
         self.layers_box_grid_layout = QGridLayout();
 
+        self.box_segmentaion = CollapsibleBox("Segmentation");
 
         self.box_manual_segmentation = QWidget();
         self.manual_segmentation_grid_layout = QGridLayout();
@@ -571,20 +577,17 @@ class MainWindow(QMainWindow):
         self.box_automatic_segmentation = QWidget();
         self.automatic_segmentation_grid_layout = QGridLayout();
 
-        self.box_radiograph_manipulation = QGroupBox();
-        self.box_radiograph_manipulation.setTitle("Manipulation")
+        self.box_radiograph_manipulation = CollapsibleBox("Manipulation");
         self.radiograph_manipulation_box_grid_layout = QGridLayout();
 
-        self.box_layers_control = QGroupBox();
-        self.box_layers_control.setTitle("Layer control")
+        self.box_layers_control = CollapsibleBox("Layer control");
         self.layers_control_grid_layout = QGridLayout();
 
-        self.box_image_processing = QGroupBox();
-        self.box_image_processing.setTitle("Image processing");
+        self.box_image_processing = CollapsibleBox("Image processing");
+        #self.box_image_processing.setTitle();
         self.box_image_processing_layout = QGridLayout();
 
-        self.box_quality_labels_params = QGroupBox();
-        self.box_quality_labels_params.setTitle("Qaulity labels")
+        self.box_quality_labels_params = CollapsibleBox("Qaulity labels");
         self.box_quality_labels_grid = QGridLayout();
         
         self.segmentation_box_tab = QTabWidget();
@@ -638,10 +641,10 @@ class MainWindow(QMainWindow):
         self.exposure_combo_box.addItem("Overexposed-mild");
         self.exposure_combo_box.addItem("Overexposed-moderate");
         self.exposure_combo_box.addItem("Overexposed-marked");
-        self.box_quality_labels_grid.addWidget(self.exposure_combo_box,1,1,1,1);
+        self.box_quality_labels_grid.addWidget(self.exposure_combo_box, 1, 1, 1, 1);
 
-        self.box_quality_labels_params.setLayout(self.box_quality_labels_grid);
-        self.gridLayout.addWidget(self.box_quality_labels_params,0,0,items_count,2);
+        self.box_quality_labels_params.setContentLayout(self.box_quality_labels_grid);
+        menu_panel_layout.addWidget(self.box_quality_labels_params);
         #-------------------------------------------------------------------------
 
         #Layers box
@@ -649,24 +652,24 @@ class MainWindow(QMainWindow):
         items_count = 0;
         self.add_segmentation_button = QPushButton(self);
         self.add_segmentation_button.setText("Add");
-        self.layers_box_grid_layout.addWidget(self.add_segmentation_button, items_count, 0, 1, 1);
+
+        self.layers_box_grid_layout.addWidget(self.add_segmentation_button, items_count, 0,1,2);
 
         self.delete_segmentation_button = QPushButton(self);
         self.delete_segmentation_button.setText("Delete");
-        self.layers_box_grid_layout.addWidget(self.delete_segmentation_button, items_count, 1, 1, 1);
+        self.layers_box_grid_layout.addWidget(self.delete_segmentation_button, items_count, 4, 1,2);
         items_count+=1;
 
         self.segments_list = QListWidget(self);
-        self.layers_box_grid_layout.addWidget(self.segments_list,items_count,0,1,2);
-        self.segments_list.setMinimumHeight(100);
+        self.layers_box_grid_layout.addWidget(self.segments_list,items_count,0,1,6);
         items_count+=1;
 
-        self.box_layers.setLayout(self.layers_box_grid_layout);
-        self.gridLayout.addWidget(self.box_layers, next_start, 0, items_count, 2);
+        self.box_layers.setContentLayout(self.layers_box_grid_layout);
+        menu_panel_layout.addWidget(self.box_layers);
         #-------------------------------------------------------------------
 
+        dummy_layout = QVBoxLayout();
         #Manual segmentation items
-        next_start += items_count;
         items_count = 0;
         self.paint_button = QPushButton();
         self.paint_button.setText("Paint");
@@ -700,7 +703,6 @@ class MainWindow(QMainWindow):
         #------------------------------------------------------------------
 
         #automatic segmentation items
-        #next_start += items_count;
         items_count = 0;
         self.foreground_button = QPushButton();
         self.foreground_button.setText("Foreground");
@@ -748,11 +750,11 @@ class MainWindow(QMainWindow):
         #self.scroll_area_automatic_segmentation.setFixedHeight(250);
 
         #------------------------------------------------------------------
-
-        self.gridLayout.addWidget(self.segmentation_box_tab, next_start, 0, items_count, 2);
+        dummy_layout.addWidget(self.segmentation_box_tab);
+        self.box_segmentaion.setContentLayout(dummy_layout);
+        menu_panel_layout.addWidget(self.box_segmentaion);
 
         #layers control box
-        next_start = self.gridLayout.rowCount();
         items_count = 0;
         self.size_label = QLabel(self);
         self.size_label.setText("Brush size: 150");
@@ -790,12 +792,12 @@ class MainWindow(QMainWindow):
         self.layers_control_grid_layout.addWidget(self.opacity_marker_slider, items_count,0,1,2);
         items_count+=1;
 
-        self.box_layers_control.setLayout(self.layers_control_grid_layout);
-        self.gridLayout.addWidget(self.box_layers_control, next_start, 0, items_count, 2);
+        self.box_layers_control.setContentLayout(self.layers_control_grid_layout);
+        menu_panel_layout.addWidget(self.box_layers_control);
         #-----------------------------------------------------------
 
         #Box radiograph manipulation
-        next_start = self.gridLayout.rowCount();
+        #next_start = self.gridLayout.rowCount();
         items_count = 0;
         self.next_sample_button = QPushButton();
         self.next_sample_button.setText("Next Sample");
@@ -822,22 +824,21 @@ class MainWindow(QMainWindow):
 
         self.all_radiographs_list = QListWidget();
         self.radiograph_manipulation_box_grid_layout.addWidget(self.all_radiographs_list, items_count, 0, 1, 2);
-        self.all_radiographs_list.setFixedHeight(110)
+        self.all_radiographs_list.setFixedHeight(250)
         items_count+=1;
         
-        self.box_radiograph_manipulation.setLayout(self.radiograph_manipulation_box_grid_layout);
-        self.gridLayout.addWidget(self.box_radiograph_manipulation,next_start,0,items_count, 2);
+        self.box_radiograph_manipulation.setContentLayout(self.radiograph_manipulation_box_grid_layout);
+        menu_panel_layout.addWidget(self.box_radiograph_manipulation);
         #----------------------------------------------------------------
 
         #Image processing
-        next_start += items_count;
+        #next_start += items_count;
         items_count = 0;
         self.clahe_slider = QSlider(Qt.Orientation.Horizontal);
         self.clahe_slider.setMinimum(0);
         self.clahe_slider.setMaximum(50);
         self.clahe_slider.setValue(0);
         self.box_image_processing_layout.addWidget(self.clahe_slider, items_count, 0,1,2);
-        self.box_image_processing.setLayout(self.box_image_processing_layout);
         items_count+=1;
 
         self.clip_limit_slider = QSlider(Qt.Orientation.Horizontal);
@@ -845,26 +846,31 @@ class MainWindow(QMainWindow):
         self.clip_limit_slider.setMaximum(50);
         self.clip_limit_slider.setValue(0);
         self.box_image_processing_layout.addWidget(self.clip_limit_slider, items_count, 0,1,2);
-        self.box_image_processing.setLayout(self.box_image_processing_layout);
         items_count+=1;
 
-        self.gridLayout.addWidget(self.box_image_processing, next_start, 0, items_count, 2);
+        self.box_image_processing.setContentLayout(self.box_image_processing_layout);
+        menu_panel_layout.addWidget(self.box_image_processing,);
         #-------------------------------------------------------------
 
-        #Row contraction
-        self.verticalSpacer = QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding) 
-        self.gridLayout.addItem(self.verticalSpacer, items_count, 0);
-        #--------------------------------------------------------------
+        menu_panel_layout.addStretch();
+        menu_panel_scroll_area.setWidget(menu_content);
 
-        #Graphics views
+        self.gridLayout.addWidget(menu_panel_scroll_area,0,0,1,6);
+
+        # #Row contraction
+        # self.verticalSpacer = QtWidgets.QSpacerItem(20, 40, QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Expanding) 
+        # self.gridLayout.addItem(self.verticalSpacer, items_count, 0);
+        # #--------------------------------------------------------------
+
+        # #Graphics views
         self.radiograph_view = RadiographViewer(self);
-        self.gridLayout.addWidget(self.radiograph_view, 0, 2, self.gridLayout.rowCount(), 2)
+        self.gridLayout.addWidget(self.radiograph_view, 0, 6, self.gridLayout.rowCount(), 2)
         
 
         self.radiograph_label = QLabel();
         self.radiograph_label.setText("Radiograph");
-        self.gridLayout.addWidget(self.radiograph_label, self.gridLayout.rowCount()+1,2,1,1);
-        #-------------------------------------------------------------
+        self.gridLayout.addWidget(self.radiograph_label, self.gridLayout.rowCount()+1,6,1,2);
+        # #-------------------------------------------------------------
 
         #Statusbar
         self.status_bar = QStatusBar();
@@ -905,9 +911,9 @@ class MainWindow(QMainWindow):
         self.segmentation_box_tab.currentChanged.connect(self.segmentation_tab_changed);
         #-------------------------------------------------------------
 
-        self.gridLayout.setColumnStretch(0,1);
-        self.gridLayout.setColumnStretch(1,1);
-        self.gridLayout.setColumnStretch(2,10);
+        for i in range(6):
+            self.gridLayout.setColumnStretch(i,1);
+        self.gridLayout.setColumnStretch(6,20);
 
         self.show();
 
@@ -1572,15 +1578,15 @@ if __name__=='__main__':
     border-width: 1px;\
     border-radius: 10px;\
     border-color: beige;\
-    font: 15px;\
-    min-width: 9em;\
-    padding: 8px;\
+    font: 10px;\
+    min-width: 7em;\
+    padding: 10px;\
     }\
     QListView {\
     background-color : HoneyDew;\
     font: 16px;\
     }\
-    QPushButton:pressed { background-color: azure; font: 14px;}");
+    QPushButton:pressed { background-color: azure; font: 11px;}");
 
 
     #Create singletons
