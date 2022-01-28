@@ -261,7 +261,7 @@ class NetworkDataset(Dataset):
             # cv2.imshow('m',m*255);
             # cv2.waitKey();
 
-        return radiograph_image, mask_image;
+        return radiograph_image, mask_image, index;
 
 def analyze_dataset():
     radiograph_root = os.path.sep.join(["dataset","CXR_png"]);

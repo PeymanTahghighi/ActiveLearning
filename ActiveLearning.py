@@ -1385,7 +1385,10 @@ class MainWindow(QMainWindow):
             os.path.sep.join([Config.PROJECT_ROOT,'labels']));
         for i in range(len(mask_list)):
             df = pd.read_pickle(mask_list[i]);
-            names = list(df.keys());
+            names = [];
+            for k in df.keys():
+                if k != "rot" and k !="exp":
+                    names.append(k);
             mask_name_list.append(names);
         
         for i in range(len(mask_name_list)):
@@ -1571,6 +1574,12 @@ class MainWindow(QMainWindow):
     
 if __name__=='__main__':
 
+    torch.autograd.set_detect_anomaly(False)
+    torch.autograd.profiler.profile(False)
+    torch.autograd.profiler.emit_nvtx(False)
+    torch.backends.cudnn.benchmark = True
+
+    
     app = QApplication(sys.argv);
     app.setStyleSheet("QPushButton {\
     background-color : white;\

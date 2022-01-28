@@ -34,11 +34,11 @@ def gradient_penalty(critic, real, fake, image):
     return gradient_penalty * 10.0;
 
 
-def save_samples(gen, val_loader, epoch, folder):
-    x, y = next(iter(val_loader))
+def save_samples(model, val_loader, epoch, folder):
+    x, y, _ = next(iter(val_loader))
     x, y = x.to(Config.DEVICE), y.to(Config.DEVICE)
     with torch.no_grad():
-        y_fake = gen(x)
+        y_fake, _ = model(x)
         if Config.NUM_CLASSES > 2:
             y_fake = torch.argmax(y_fake,dim=1).unsqueeze(dim = 1);
         else:
@@ -72,11 +72,10 @@ def save_samples(gen, val_loader, epoch, folder):
             save_image(gt_grid, os.path.sep.join([Config.PROJECT_ROOT, folder, f"gt.png"]))
 
 
-def save_checkpoint(model, optimizer, epoch, filename="my_checkpoint.pth.tar"):
+def save_checkpoint(model, epoch, filename="my_checkpoint.pth.tar"):
     print("=> Saving checkpoint")
     checkpoint = {
         "state_dict": model.state_dict(),
-        "optimizer": optimizer.state_dict(),
         "epoch" : epoch
     }
     torch.save(checkpoint, filename)

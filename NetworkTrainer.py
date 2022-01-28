@@ -18,7 +18,7 @@ import torch.nn as nn
 import torch.optim as optim
 import Config
 from NetworkDataset import NetworkDataset, OfflineAugmentation, TrainValidSplit
-from Network import Generator, Discriminator
+from Network import *
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchvision.transforms import transforms
 from tqdm import tqdm
@@ -46,7 +46,9 @@ import torchvision.transforms.functional as F
 from ignite.contrib.handlers.tensorboard_logger import *
 import Config
 import logging
-#import ptvsd
+from torchmetrics import *
+import ptvsd
+from StoppingStrategy import *
 
 
 class NetworkTrainer(QObject):
@@ -70,19 +72,29 @@ class NetworkTrainer(QObject):
     def __initialize(self,):
         self.disc_list = [];
 
-        self.gen = Generator(1, 128).to(Config.DEVICE);
-        self.optGen = optim.RMSprop(self.gen.parameters(), lr=Config.LEARNING_RATE, weight_decay=1e-4);
+        self.model = Unet(num_classes=3).to(Config.DEVICE);
+        self.optimizer = optim.RMSprop(self.model.parameters(), lr=Config.LEARNING_RATE, weight_decay=1e-4);
+
+        self.precision_estimator = Precision(num_classes=3, average='macro').to(Config.DEVICE);
+        self.recall_estimator = Recall(num_classes=3, average='macro').to(Config.DEVICE);
+        self.accuracy_esimator = Accuracy(num_classes=3,average='macro').to(Config.DEVICE);
+        self.f1_esimator = F1(num_classes=3, average='macro').to(Config.DEVICE);
 
         self.l1_loss = nn.L1Loss().to(Config.DEVICE);
+
+        self.scaler = torch.cuda.amp.grad_scaler.GradScaler()
         
         #Initialize transforms for training and validation
         self.train_transforms = A.Compose(
             [
                 #A.PadIfNeeded(min_height = 512, min_width = 512),
-                A.Resize(Config.IMAGE_SIZE, Config.IMAGE_SIZE),
+                #A.RandomCrop(Config.IMAGE_SIZE, Config.IMAGE_SIZE, always_apply = False, p = 0.5),
+                #A.Resize(Config.IMAGE_SIZE, Config.IMAGE_SIZE),
                 #A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=20, p=0.5),
+                #A.HorizontalFlip(p=0.5),
                 #A.RandomBrightnessContrast(p=0.5),
-                A.Normalize(mean=(0.5), std=(0.5)),
+                A.Resize(Config.IMAGE_SIZE, Config.IMAGE_SIZE),
+                A.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]),
                 ToTensorV2(),
             ],
             additional_targets={'mask': 'mask'}
@@ -91,8 +103,9 @@ class NetworkTrainer(QObject):
         self.valid_transforms = A.Compose(
                 [
                 #A.PadIfNeeded(min_height = 512, min_width = 512),
+                #A.RandomCrop(Config.IMAGE_SIZE, Config.IMAGE_SIZE, always_apply = True),
                 A.Resize(Config.IMAGE_SIZE, Config.IMAGE_SIZE),
-                A.Normalize(mean=(0.5), std=(0.5)), 
+                A.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]),
                 ToTensorV2()
                 ]
         )
@@ -120,7 +133,7 @@ class NetworkTrainer(QObject):
         self.valid_loader = DataLoader(self.valid_dataset, 
         batch_size= Config.BATCH_SIZE, shuffle=False);
 
-        self.gen.set_num_classes(Config.NUM_CLASSES);
+        #self.gen.set_num_classes(Config.NUM_CLASSES);
 
         #set weight tensor by calculating each class distribution
         total = np.sum(layer_weight);
@@ -131,17 +144,11 @@ class NetworkTrainer(QObject):
         layer_weight = layer_weight / np.sqrt(np.sum(layer_weight **2));
         self.weight_tensor = torch.tensor(layer_weight,dtype=torch.float32);
         if Config.NUM_CLASSES > 2:
-            self.ce = nn.NLLLoss(self.weight_tensor).to(Config.DEVICE);
+            self.bce = nn.CrossEntropyLoss().to(Config.DEVICE);
         else:
             self.ce = nn.BCELoss().to(Config.DEVICE);
         
-
-        #Initialize each descriminator
-        self.disc_list.clear();
-        for i in range(Config.NUM_CLASSES-1):
-            disc = Discriminator().to(Config.DEVICE);
-            opt_disc = optim.RMSprop(disc.parameters(), lr = Config.LEARNING_RATE, weight_decay=1e-4);
-            self.disc_list.append([disc,opt_disc]);
+        self.stopping_strategy = CombinedTrainValid(2,5);
 
         #Initialize the weights of generator and discriminator
         #self.disc.apply(self.initialize_weights)
@@ -150,20 +157,6 @@ class NetworkTrainer(QObject):
         #Finally save train meta file.
         #It describes number of classes and each layer's name
         pickle.dump([Config.NUM_CLASSES, layer_names], open(os.path.sep.join([Config.PROJECT_ROOT,'ckpts','train.meta']),'wb'));
-
-    def visualize_augmentations(self, dataset, idx=0, samples=5):
-        dataset = copy.deepcopy(dataset)
-        dataset.transform = A.Compose([t for t in dataset.transform if not isinstance(t, (A.Normalize, ToTensorV2))])
-        figure, ax = plt.subplots(nrows=samples, ncols=4, figsize=(10, 24))
-        for i in range(samples):
-            image, mask = dataset[idx]
-            ax[i, 0].imshow(image, cmap='gray')
-            ax[i, 1].imshow(mask, interpolation="nearest", cmap='gray');
-            ax[i, 0].set_axis_off()
-            ax[i, 1].set_axis_off()
-        plt.tight_layout()
-        plt.show()
-        plt.waitforbuttonpress();
     
     def dice_loss(self, pred, mask, eps=1e-7):
         """Computes the Sørensen–Dice loss.
@@ -223,282 +216,127 @@ class NetworkTrainer(QObject):
 
         return 10.0*loss_seg + 10.0*loss_dice + 10.0*loss_l1;
 
-    def initialize_weights(self, m):
-        classname = m.__class__.__name__
-        if classname.find('Conv') != -1:
-            #torch.nn.init.xavier_uniform_(m.weight);
-            m.weight.data.normal_(0.0, 1.0)
-        # elif classname.find('BatchNorm') != -1:
-        #     m.weight.data.normal_(1.0, 0.02)
-        #     m.bias.data.fill_(0)
+    def __train_one_epoch(self, loader, model, optimizer):
 
-    def __train_step(self, engine, batch):
-        
-        #with torch.autograd.detect_anomaly():
-        radiograph, mask = batch;
-        radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE)
+        epoch_loss = 0;
+        step = 0;
+        update_step = 1;
+        with tqdm(loader, unit="batch") as batch_data:
+            for radiograph, mask, _ in batch_data:
+                radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE)
+                # radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE);
+                # radiograph_np = radiograph.permute(0,2,3,1).cpu().detach().numpy();
+                #mask_np = mask.permute(0,2,3,1).cpu().detach().numpy();
+                # radiograph_np = radiograph_np*0.5+0.5;
+                # plt.figure();
+                # plt.imshow(radiograph_np[0]);
+                # plt.waitforbuttonpress();
 
-        #radiograph = (radiograph + 1)/2.0;
-
-        epoch_disc_loss = 0;
-        epoch_gen_loss = 0;
-
-        y_fake = self.gen(radiograph);
-        # y_fake_sm = torch.softmax(y_fake, dim=1);
-        # y_fake_log = torch.log2(y_fake_sm);
-        
-        if Config.NUM_CLASSES > 2:
-            y_fake_thresh_max = torch.argmax(y_fake, dim=1).unsqueeze(dim=1);
-        else:
-            y_fake_thresh_max = y_fake > 0.5;
-        
-        #n = y_fake_thresh_max.detach().numpy();
-        y_fake_list = [];
-        d_real_list = [];
-        d_fake_list = [];
-
-        #Train discriminators
-        for i in range(1,Config.NUM_CLASSES):
-            mask_tmp = mask.clone();
-            y_fake_thresh_max_tmp = y_fake_thresh_max.clone();
-            mask_tmp[mask_tmp != i] = 0;
-            mask_tmp[mask_tmp == i] = 1;
-            y_fake_thresh_max_tmp[y_fake_thresh_max_tmp != i] = 0;
-            y_fake_thresh_max_tmp[y_fake_thresh_max_tmp == i] = 1;
-        
-            d_real = self.disc_list[i-1][0](radiograph,mask_tmp);
-
-            d_fake = self.disc_list[i-1][0](radiograph,y_fake_thresh_max_tmp.detach());
-
-            y_fake_list.append(y_fake_thresh_max_tmp);
-            d_real_list.append(d_real.detach());
-
-        
-            loss_disc = -torch.mean(torch.abs(d_real - d_fake));
-
-            self.disc_list[i-1][1].zero_grad();
-            loss_disc.backward();
-            self.disc_list[i-1][1].step();
-
-            for p in self.disc_list[i-1][0].parameters():
-                p.data.clamp_(-0.05, 0.05)
-            
-            epoch_disc_loss += loss_disc;
-        #-----------------------------------------------------
-
-        #Train generator
-        for i in range(Config.NUM_CLASSES-1):
-            #n = y_fake_list[i].detach().numpy();
-            d_fake = self.disc_list[i][0](radiograph, y_fake_list[i]);
-            d_fake_list.append(d_fake);
-
-        loss_gen = self.__loss_func_gen(y_fake, y_fake_thresh_max, mask, 
-            d_real_list, d_fake_list, self.ce);
-
-        epoch_gen_loss = loss_gen.item();
-
-        self.optGen.zero_grad();
-        loss_gen.backward();
-
-       # nn.utils.clip_grad_value_(self.gen.parameters(), clip_value=1.0)
-
-        self.optGen.step();
-        #------------------------------------------------------
-        #self.apt.koft();
-        return {"error_d" : epoch_disc_loss, "error_g" : epoch_gen_loss, "mask" : mask, "pred": y_fake_thresh_max};
-
-    def __eval_step(self,engine, batch):
-        radiograph, mask = batch;
-        radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE)
-
-        #radiograph = (radiograph + 1)/2.0;
-
-        with torch.no_grad():
-            y_fake = self.gen(radiograph);
-
-            if Config.NUM_CLASSES > 2:
-                y_fake_thresh_max = torch.argmax(y_fake, dim=1).unsqueeze(dim=1);
-            else:
-                y_fake_thresh_max = y_fake > 0.5;
+                # plt.figure();
+                # plt.imshow(mask[0]*255);
+                # plt.waitforbuttonpress();
                 
-            d_real_list = [];
-            d_fake_list = [];
 
-            for i in range(1, Config.NUM_CLASSES):
-                y_fake_thresh_max_tmp = y_fake_thresh_max.clone();
-                mask_tmp = mask.clone();
+                with torch.cuda.amp.autocast_mode.autocast():
+                    pred,_ = model(radiograph);
+                    loss_ce = self.bce(pred,mask.squeeze(dim=1).long());
 
-                y_fake_thresh_max_tmp[y_fake_thresh_max_tmp != i] = 0;
-                y_fake_thresh_max_tmp[y_fake_thresh_max_tmp == i] = 1;
-                mask_tmp[mask_tmp != i] = 0;
-                mask_tmp[mask_tmp == i] = 1;
+                    loss = loss_ce;
 
-                d_fake = self.disc_list[i-1][0](radiograph, y_fake_thresh_max_tmp);
-                d_real = self.disc_list[i-1][0](radiograph,mask_tmp);
+                self.scaler.scale(loss).backward();
+                epoch_loss += loss.item();
+                step += 1;
 
-                d_fake_list.append(d_fake);
-                d_real_list.append(d_real);
+                if step % update_step == 0:
+                    self.scaler.step(optimizer);
+                    self.scaler.update();
+                    optimizer.zero_grad();
 
-            loss_gen = self.__loss_func_gen(y_fake, y_fake_thresh_max, mask, d_real_list, d_fake_list, self.ce);
-            
-        return {"mask" : mask, "loss" : loss_gen, "pred": y_fake_thresh_max};
+    def __eval_one_epoch(self, loader, model):
+        epoch_loss = 0;
+        total_pred_lbl = None;
+        total_mask = None;
+        first = True;
+        count = 0;
+        
+        with torch.no_grad():
+            with tqdm(loader, unit="batch") as epoch_data:
+                for radiograph, mask, _ in epoch_data:
+                    radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE);
+
+                    pred,_ = model(radiograph);
+                    loss = self.bce(pred,mask.squeeze(dim=1).long());
+
+                    epoch_loss += loss.item();
+                    
+                    if first is True:
+                        total_pred = pred;
+                        total_mask = mask;
+                        first = False;
+                    else:
+                        total_pred = torch.cat([total_pred, pred], dim=0);
+                        total_mask = torch.cat([total_mask, mask], dim=0);
+
+                    count += 1;
+        total_pred_lbl =  torch.argmax(torch.softmax(total_pred,dim=1),dim=1);
+        total_mask = total_mask;
+        prec = self.precision_estimator(total_pred_lbl.flatten(), total_mask.flatten().long());
+        rec = self.recall_estimator(total_pred_lbl.flatten(), total_mask.flatten().long());
+        acc = self.accuracy_esimator(total_pred_lbl.flatten(), total_mask.flatten().long());
+        f1 = self.f1_esimator(total_pred_lbl.flatten(), total_mask.flatten().long());
+        return epoch_loss / count, acc, prec, rec, f1;
+
 
     def start_train_slot(self, layers_names):
-        #ptvsd.debug_this_thread();
+        ptvsd.debug_this_thread();
         logging.info("Start training...");
-        def score_func(engine):
-            #loss = engine.state.metrics['loss'];
-            metrics = engine.state.metrics;
-            columns = list(metrics.keys())
-            values = list(metrics.values());
-
-            cm = values[1].cpu().detach().numpy();
-            calculate_metrics(cm, columns, values);
-            return values[5];
-        
-        def output_transform(output):
-            mask,pred = output['mask'], output['pred'];
-            
-            if Config.NUM_CLASSES > 2:
-                mask = mask.permute(0,2,3,1).long();
-                pred = pred.permute(0,2,3,1).long();
-                mask = torch.nn.functional.one_hot(mask, num_classes = Config.NUM_CLASSES).squeeze(dim = 3).permute(0,3,1,2);
-                pred = torch.nn.functional.one_hot(pred, num_classes = Config.NUM_CLASSES).squeeze(dim = 3).permute(0,3,1,2);
-                mask = torch.flatten(mask,2);
-                pred = torch.flatten(pred,2);   
-            else:
-                #pred = pred.round().long();
-                pred = igut.to_onehot(pred.long(), 2).squeeze(dim=2);
-                pred = torch.flatten(pred, 2);
-                #n = pred.detach().numpy();
-                mask = mask.long();
-                mask = torch.flatten(mask, 1);
-            return pred,mask;
-        #Remove previously trained model checkpoint
-        lst = glob(os.path.sep.join([Config.PROJECT_ROOT,'ckpts',]) + '/*');
-        for f in lst:
-            os.unlink(f);
-
         self.initialize_new_train(layers_names);
 
-        self.augmentation_finished_signal.emit();
+        best = 100;
+        e = 0;
+        best_model = None;
 
-        #torch.autograd.set_detect_anomaly(True)
+        while(True):
+            self.model.train();
+            self.__train_one_epoch(self.train_loader,self.model, self.optimizer);
 
-        self.trainer = Engine(self.__train_step);
-        self.evaluator = Engine(self.__eval_step);
-        
-        monitoring_metrics_train = ["error_d", "error_g"];
-        monitoring_metrics_eval = ["loss"];
-        RunningAverage(output_transform=lambda x: x["error_d"]).attach(self.trainer, "error_d")
-        RunningAverage(output_transform=lambda x: x["error_g"]).attach(self.trainer, "error_g")
+            self.model.eval();
+            train_loss, train_acc, train_precision, train_recall, train_f1 = self.__eval_one_epoch(self.train_loader, self.model);
 
-        RunningAverage(output_transform=lambda x: x["loss"]).attach(self.evaluator, "loss")
+            valid_loss, valid_acc, valid_precision, valid_recall, valid_f1 = self.__eval_one_epoch(self.valid_loader, self.model);
 
-        if Config.NUM_CLASSES > 2:
-            MultiLabelConfusionMatrix(num_classes = Config.NUM_CLASSES, output_transform=output_transform).attach(self.evaluator,'cm');
-            MultiLabelConfusionMatrix(num_classes = Config.NUM_CLASSES, output_transform=output_transform).attach(self.trainer,'cm');
-        else:
-            ConfusionMatrix(num_classes=2, output_transform=output_transform).attach(self.trainer, 'cm');
-            ConfusionMatrix(num_classes=2, output_transform=output_transform).attach(self.evaluator, 'cm');
+            print(f"Epoch {e}\tLoss: {train_loss}\tPrecision: {train_precision}\tRecall: {train_recall}\tAccuracy: {train_acc}\tF1: {train_f1}");
+            print(f"Valid \tLoss: {valid_loss}\tPrecision: {valid_precision}\tRecall: {valid_recall}\tAccuracy: {valid_acc}\tF1: {valid_f1}");
 
-        pbar_trainer = ProgressBar()
-        pbar_trainer.attach(self.trainer, metric_names= monitoring_metrics_train);
+            self.writer.add_scalar('training/loss', float(train_loss),e);
+            self.writer.add_scalar('training/precision', float(train_precision),e);
+            self.writer.add_scalar('training/recall', float(train_recall),e);
+            self.writer.add_scalar('training/accuracy', float(train_acc),e);
+            self.writer.add_scalar('training/f1', float(train_f1),e);
 
-        pbar_eval = ProgressBar()
-        pbar_eval.attach(self.evaluator, metric_names= monitoring_metrics_eval);
+            self.writer.add_scalar('validation/loss', float(valid_loss),e);
+            self.writer.add_scalar('validation/precision', float(valid_precision),e);
+            self.writer.add_scalar('validation/recall', float(valid_recall),e);
+            self.writer.add_scalar('validation/accuracy', float(valid_acc),e);
+            self.writer.add_scalar('validation/f1', float(valid_f1),e);
 
-        handler = EarlyStopping(patience=25 ,score_function=score_func, trainer = self.trainer);
-        model_checkpoint = ModelCheckpoint(os.path.sep.join([Config.PROJECT_ROOT,"ckpts"]),
-        n_saved=1,
-        filename_prefix=Config.PROJECT_NAME + "_network",
-        score_function = score_func,
-        global_step_transform=global_step_from_engine(self.trainer),
-        require_empty=False);
+            if(valid_loss < best):
+                print("New best model found!");
+                save_checkpoint(self.model, e);
+                best = valid_loss;
+                best_model = deepcopy(self.model.state_dict());
+                save_samples(self.model, self.valid_loader, e, 'evaluation');
 
-        self.evaluator.add_event_handler(Events.COMPLETED, handler);
-        to_save = {"generator" : self.gen};
-        for i in range(len(self.disc_list)):
-            to_save[f'disc_{i}'] = self.disc_list[i][0];
-        self.evaluator.add_event_handler(Events.COMPLETED, model_checkpoint, to_save = to_save);
+            if self.stopping_strategy(valid_loss, train_loss) is False:
+                break;
 
-        @self.trainer.on(Events.EPOCH_STARTED)
-        def epoch_started():
-            self.gen.train();
-            for d in self.disc_list:
-                d[0].train();
+        self.model.load_state_dict(best_model);
+        self.model.eval();
+        print(f"\n-----------\nFinal evaluation iteration ");
+        test_loss, test_acc, test_precision, test_recall, test_f1 = self.__eval_one_epoch(self.test_loader, self.model);
 
-        @self.evaluator.on(Events.EPOCH_STARTED)
-        def epoch_started():
-            self.gen.eval();
-            for d in self.disc_list:
-                d[0].eval();
-    
-        @self.trainer.on(Events.EPOCH_COMPLETED)
-        def log_training_results(engine):
-            
-            fname = os.path.join("out", "logs.tsv")
-            columns = list(engine.state.metrics.keys());
-            values = list(engine.state.metrics.values());
-            cm = values[2].cpu().detach().numpy();
-            calculate_metrics(cm, columns, values);
-
-            message = f"[{engine.state.epoch}/{Config.NUM_EPOCHS}]"
-            for name, value in zip(columns, values):
-                if(name != 'cm'):
-                    self.writer.add_scalar('training/' + name,float(value),engine.state.epoch);
-                    message += f" | {name}: {value}"
-            
-
-            pbar_trainer.log_message(message)
-            self.update_train_info_epoch_train.emit(columns,values, engine.state.times['EPOCH_COMPLETED'], engine.state.epoch);
-            pass
-
-        @self.trainer.on(Events.EPOCH_COMPLETED)
-        def log_validattion_results(engine):
-            self.evaluator.run(self.valid_loader);
-            metrics = self.evaluator.state.metrics;
-            columns = list(metrics.keys())
-            values = list(metrics.values());
-
-            cm = values[1].cpu().detach().numpy();
-            calculate_metrics(cm, columns, values);
-
-
-            message = f"[{engine.state.epoch}/{Config.NUM_EPOCHS}]"
-            for name, value in zip(columns, values):
-                if(name != 'cm'):
-                    self.writer.add_scalar('validation/' + name,float(value),engine.state.epoch);
-                    message += f" | {name}: {value}"
-
-            pbar_trainer.log_message(message)
-            self.update_train_info_epoch_valid.emit(columns,values);
-
-            #Save several examples
-            save_samples(self.gen, self.valid_loader, engine.state.epoch, "evaluation");
-
-        @self.trainer.on(Events.COMPLETED)
-        def train_completed():
-            self.train_finsihed_signal.emit();
-        
-        @self.trainer.on(Events.ITERATION_COMPLETED)
-        def log_iteration(engine):
-            self.update_train_info_iter.emit((engine.state.iteration % engine.state.epoch_length) / engine.state.epoch_length,
-             );
-            if Config.FINISH_TRAINING is True:
-                self.trainer.terminate();
-                self.evaluator.terminate();
-                Config.FINISH_TRAINING = False;
-
-            
-        @self.evaluator.on(Events.ITERATION_COMPLETED)
-        def log_iteration(engine):
-            self.update_valid_info_iter.emit((engine.state.iteration % engine.state.epoch_length) / engine.state.epoch_length,
-             );
-        
-        #self.trainer.terminate();
-        
-        self.trainer.run(self.train_loader, Config.NUM_EPOCHS);
+        print(f"Test {e}\tLoss: {test_loss}\tPrecision: {test_precision}\tRecall: {test_recall}\tAccuracy: {test_acc}\tF1: {test_f1}");
+        print(f"\n-----------\n");
     
     def terminate_slot(self):
         self.trainer.terminate();
