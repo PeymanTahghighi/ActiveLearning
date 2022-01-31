@@ -2,6 +2,7 @@ import pickle
 from PyQt5 import QtCore
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QMessageBox
+from django import conf
 from ignite.handlers.checkpoint import Checkpoint
 from ignite.metrics.multilabel_confusion_matrix import MultiLabelConfusionMatrix
 from ignite.metrics.confusion_matrix import ConfusionMatrix
@@ -47,7 +48,7 @@ from ignite.contrib.handlers.tensorboard_logger import *
 import Config
 import logging
 from torchmetrics import *
-import ptvsd
+#import ptvsd
 from StoppingStrategy import *
 
 
@@ -150,6 +151,8 @@ class NetworkTrainer(QObject):
         
         self.stopping_strategy = CombinedTrainValid(2,5);
 
+        self.model.reset_weights();
+
         #Initialize the weights of generator and discriminator
         #self.disc.apply(self.initialize_weights)
         #self.gen.apply(self.initialize_weights)
@@ -220,7 +223,7 @@ class NetworkTrainer(QObject):
 
         epoch_loss = 0;
         step = 0;
-        update_step = 1;
+        update_step = 2;
         with tqdm(loader, unit="batch") as batch_data:
             for radiograph, mask, _ in batch_data:
                 radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE)
@@ -288,7 +291,6 @@ class NetworkTrainer(QObject):
 
 
     def start_train_slot(self, layers_names):
-        ptvsd.debug_this_thread();
         logging.info("Start training...");
         self.initialize_new_train(layers_names);
 
@@ -329,35 +331,23 @@ class NetworkTrainer(QObject):
 
             if self.stopping_strategy(valid_loss, train_loss) is False:
                 break;
-
-        self.model.load_state_dict(best_model);
-        self.model.eval();
-        print(f"\n-----------\nFinal evaluation iteration ");
-        test_loss, test_acc, test_precision, test_recall, test_f1 = self.__eval_one_epoch(self.test_loader, self.model);
-
-        print(f"Test {e}\tLoss: {test_loss}\tPrecision: {test_precision}\tRecall: {test_recall}\tAccuracy: {test_acc}\tF1: {test_f1}");
-        print(f"\n-----------\n");
-    
-    def terminate_slot(self):
-        self.trainer.terminate();
-        self.evaluator.terminate();
+            e += 1;
 
     def load_model(self):
         lstdir = glob(os.path.sep.join([Config.PROJECT_ROOT,'ckpts']) + '/*');
         #Find checkpoint file based on extension
         found = False;
         for c in lstdir:
-            _, ext = os.path.splitext(c);
+            file_name, ext = os.path.splitext(c);
             if ext == '.pt':
                 found = True;
                 #Load train meta to read layer names and number of classes
                 self.train_meta = pickle.load(open(os.path.sep.join([Config.PROJECT_ROOT,'ckpts', 'train.meta']),'rb'));
                 Config.NUM_CLASSES = self.train_meta[0];
-                self.gen.set_num_classes(Config.NUM_CLASSES);
-                to_load = {"generator" : self.gen};
-                checkpoint_path = c;
-                checkpoint = torch.load(checkpoint_path, map_location=Config.DEVICE);
-                Checkpoint.load_objects(to_load = to_load, checkpoint = checkpoint);
+                print(Config.NUM_CLASSES);
+                #self.gen.set_num_classes(Config.NUM_CLASSES);
+                load_checkpoint(c, self.model);
+                #self.model.load_state_dict(checkpoint["state_dict"])
 
         self.model_loaded_finished.emit(found);
         self.model_load_status = found;
@@ -366,22 +356,27 @@ class NetworkTrainer(QObject):
         Predict of unlabeled data and update the second entry in  dictionary to 1.
     '''
     def predict(self, lbl, dc):
+        #ptvsd.debug_this_thread();
         #Because predicting is totally based on the initialization of the model,
         # if we haven't loaded a model yet or the loading wasn't successfull
         # we should not do anything and return immediately.
         if self.model_load_status:
-            self.gen.eval();
+            self.model.eval();
             with torch.no_grad():
                 radiograph_image = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'images', lbl]),cv2.IMREAD_GRAYSCALE);
-                clahe = cv2.createCLAHE(5,(9,9));
+                #radiograph_image = cv2.imread(radiograph_image_path,cv2.IMREAD_GRAYSCALE);
+                clahe = cv2.createCLAHE(7,(11,11));
                 radiograph_image = clahe.apply(radiograph_image);
+                radiograph_image = np.expand_dims(radiograph_image, axis=2);
+                radiograph_image = np.repeat(radiograph_image, 3,axis=2);
                 
-                w,h = radiograph_image.shape;
+                w,h,_ = radiograph_image.shape;
                 transformed = self.valid_transforms(image = radiograph_image);
                 radiograph_image = transformed["image"];
-                radiograph_image = torch.unsqueeze(radiograph_image,0);
                 radiograph_image = radiograph_image.to(Config.DEVICE);
-                p = self.gen(radiograph_image);
+                #radiograph_image = torch.unsqueeze(radiograph_image,0);
+                #radiograph_image = radiograph_image.to(Config.DEVICE);
+                p,_ = self.model(radiograph_image.unsqueeze(dim=0));
                 mask_list = [];
                 if Config.NUM_CLASSES > 2:
                     num_classes = p.size()[1];
@@ -392,7 +387,7 @@ class NetworkTrainer(QObject):
                     for i in range(1,num_classes):
                         mask = np.zeros(shape=(Config.IMAGE_SIZE, Config.IMAGE_SIZE, 3),dtype=np.uint8);
                         tmp = (p==i);
-                        mask[(tmp)] = PIL.ImageColor.getrgb(Config.PREDEFINED_COLORS[i-1]);
+                        mask[(tmp)] = Config.PREDEFINED_COLORS[i-1];
                         mask = cv2.resize(mask,(h,w), interpolation=cv2.INTER_NEAREST);
                         mask_list.append(mask);
                 else:

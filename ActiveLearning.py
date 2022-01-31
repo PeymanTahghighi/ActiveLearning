@@ -1668,7 +1668,6 @@ if __name__=='__main__':
     network_trainer.update_train_info_epoch_train.connect(window.trainig_info_window.update_train_info_epoch_train_slot);
     network_trainer.update_train_info_epoch_valid.connect(window.trainig_info_window.update_train_info_epoch_valid_slot);
     network_trainer.augmentation_finished_signal.connect(window.trainig_info_window.augmentation_finished_slot);
-    window.trainig_info_window.terminate_signal.connect(network_trainer.terminate_slot);
     network_trainer.model_loaded_finished.connect(window.model_loaded_finished_slot);
     window.foreground_clicked_signal.connect(window.radiograph_view.foreground_clicked_slot);
     window.background_clicked_signal.connect(window.radiograph_view.background_clicked_slot);

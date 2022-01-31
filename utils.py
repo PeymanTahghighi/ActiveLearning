@@ -72,32 +72,23 @@ def save_samples(model, val_loader, epoch, folder):
             save_image(gt_grid, os.path.sep.join([Config.PROJECT_ROOT, folder, f"gt.png"]))
 
 
-def save_checkpoint(model, epoch, filename="my_checkpoint.pth.tar"):
+def save_checkpoint(model, epoch):
     print("=> Saving checkpoint")
     checkpoint = {
         "state_dict": model.state_dict(),
         "epoch" : epoch
     }
-    torch.save(checkpoint, filename)
+    torch.save(checkpoint, os.path.sep.join([Config.PROJECT_ROOT, "ckpts", f"ckpt.pt"]))
 
 
-def load_checkpoint(checkpoint_file, model, optimizer, lr):
+def load_checkpoint(checkpoint_file, model):
     if(os.path.exists(checkpoint_file)):
 
         print("=> Loading checkpoint")
         
         checkpoint = torch.load(checkpoint_file, map_location=Config.DEVICE)
         model.load_state_dict(checkpoint["state_dict"])
-        optimizer.load_state_dict(checkpoint["optimizer"])
 
-
-        # If we don't do this then it will just have learning rate of old checkpoint
-        # and it will lead to many hours of debugging \:
-        for param_group in optimizer.param_groups:
-            param_group["lr"] = lr
-        
-        #Return epoch number after successful loading
-        return checkpoint['epoch'];
     return 0;
 
 def pixmap_to_numpy(pixmap):

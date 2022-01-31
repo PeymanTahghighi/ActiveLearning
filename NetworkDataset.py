@@ -60,7 +60,7 @@ class TrainValidSplit():
 
         print(f"[TRAIN INFO] | Train size(before augmentation): {dataset_size - split} \tValid size: {split}");
 
-        self.radiograph_names, self.mask_names = shuffle(self.radiograph_names, self.mask_names, random_state = 7);
+        self.radiograph_names, self.mask_names = shuffle(self.radiograph_names, self.mask_names, random_state = 40);
 
         split = dataset_size - split;
 

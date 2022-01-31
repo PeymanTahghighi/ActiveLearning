@@ -1,10 +1,10 @@
 import torch
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu";
-LEARNING_RATE = 5e-5
-BATCH_SIZE = 2
+LEARNING_RATE = 1e-5
+BATCH_SIZE = 1
 NUM_WORKERS = 1
-IMAGE_SIZE = 1024
+IMAGE_SIZE = 512
 NUM_EPOCHS = 40
 EPSILON = 1e-6
 NUM_CLASSES = 1;
