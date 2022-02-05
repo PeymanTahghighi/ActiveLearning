@@ -2,7 +2,6 @@ import pickle
 from PyQt5 import QtCore
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QMessageBox
-from django import conf
 from ignite.handlers.checkpoint import Checkpoint
 from ignite.metrics.multilabel_confusion_matrix import MultiLabelConfusionMatrix
 from ignite.metrics.confusion_matrix import ConfusionMatrix
@@ -40,8 +39,6 @@ from PIL import Image
 from glob import glob
 from torchvision.utils import save_image
 import albumentations as A
-from albumentations.pytorch import ToTensorV2
-import copy
 import PIL.ImageColor
 import torchvision.transforms.functional as F
 from ignite.contrib.handlers.tensorboard_logger import *
@@ -66,7 +63,7 @@ class NetworkTrainer(QObject):
         super().__init__();
         self.__initialize();
         #To check if we've successfuly opened a model from disk or not.
-        self.model_load_status = False;
+        self.__model_load_status = False;
         pass
 
     #This function should be called once the program starts
@@ -84,40 +81,23 @@ class NetworkTrainer(QObject):
         self.l1_loss = nn.L1Loss().to(Config.DEVICE);
 
         self.scaler = torch.cuda.amp.grad_scaler.GradScaler()
-        
-        #Initialize transforms for training and validation
-        self.train_transforms = A.Compose(
-            [
-                #A.PadIfNeeded(min_height = 512, min_width = 512),
-                #A.RandomCrop(Config.IMAGE_SIZE, Config.IMAGE_SIZE, always_apply = False, p = 0.5),
-                #A.Resize(Config.IMAGE_SIZE, Config.IMAGE_SIZE),
-                #A.ShiftScaleRotate(shift_limit=0.05, scale_limit=0.05, rotate_limit=20, p=0.5),
-                #A.HorizontalFlip(p=0.5),
-                #A.RandomBrightnessContrast(p=0.5),
-                A.Resize(Config.IMAGE_SIZE, Config.IMAGE_SIZE),
-                A.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]),
-                ToTensorV2(),
-            ],
-            additional_targets={'mask': 'mask'}
-        )
-
-        self.valid_transforms = A.Compose(
-                [
-                #A.PadIfNeeded(min_height = 512, min_width = 512),
-                #A.RandomCrop(Config.IMAGE_SIZE, Config.IMAGE_SIZE, always_apply = True),
-                A.Resize(Config.IMAGE_SIZE, Config.IMAGE_SIZE),
-                A.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]),
-                ToTensorV2()
-                ]
-        )
     
         self.train_valid_split = TrainValidSplit();
         self.offline_augmentation = OfflineAugmentation();
         pass
+    
+    def get_model(self,):
+        if self.__model_load_status is False:
+            self.load_model();
 
-    #This function should be called everytime we want to train a new model
+        return self.model, self.__model_load_status;
+    
     def initialize_new_train(self, layer_names):
         
+        #set model_load_satus to false so next time we are going to use the model
+        #we are forced to load the newly trained model
+        self.__model_load_status = False;
+
         self.writer = SummaryWriter(os.path.sep.join([Config.PROJECT_ROOT,'experiments']));
 
         train_radiograph, train_masks, valid_radiographs, valid_masks = \
@@ -125,8 +105,8 @@ class NetworkTrainer(QObject):
             os.path.sep.join([Config.PROJECT_ROOT,'labels']),0.2, layer_names);
         train_radiograph, train_masks, layer_weight = self.offline_augmentation.initialize_augmentation(train_radiograph, train_masks, layer_names);
 
-        self.train_dataset = NetworkDataset(train_radiograph, train_masks, self.train_transforms, train = True);
-        self.valid_dataset = NetworkDataset(valid_radiographs, valid_masks, self.valid_transforms, train = False, layer_names = layer_names);
+        self.train_dataset = NetworkDataset(train_radiograph, train_masks, Config.train_transforms, train = True);
+        self.valid_dataset = NetworkDataset(valid_radiographs, valid_masks, Config.valid_transforms, train = False, layer_names = layer_names);
 
         self.train_loader = DataLoader(self.train_dataset, 
         batch_size= Config.BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True, drop_last=True);
@@ -223,7 +203,7 @@ class NetworkTrainer(QObject):
 
         epoch_loss = 0;
         step = 0;
-        update_step = 2;
+        update_step = 1;
         with tqdm(loader, unit="batch") as batch_data:
             for radiograph, mask, _ in batch_data:
                 radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE)
@@ -243,7 +223,6 @@ class NetworkTrainer(QObject):
                 with torch.cuda.amp.autocast_mode.autocast():
                     pred,_ = model(radiograph);
                     loss_ce = self.bce(pred,mask.squeeze(dim=1).long());
-
                     loss = loss_ce;
 
                 self.scaler.scale(loss).backward();
@@ -291,11 +270,12 @@ class NetworkTrainer(QObject):
 
 
     def start_train_slot(self, layers_names):
+        #ptvsd.debug_this_thread();
         logging.info("Start training...");
         self.initialize_new_train(layers_names);
 
         best = 100;
-        e = 0;
+        e = 1;
         best_model = None;
 
         while(True):
@@ -333,7 +313,7 @@ class NetworkTrainer(QObject):
                 break;
             e += 1;
 
-    def load_model(self):
+    def __load_model(self):
         lstdir = glob(os.path.sep.join([Config.PROJECT_ROOT,'ckpts']) + '/*');
         #Find checkpoint file based on extension
         found = False;
@@ -344,23 +324,28 @@ class NetworkTrainer(QObject):
                 #Load train meta to read layer names and number of classes
                 self.train_meta = pickle.load(open(os.path.sep.join([Config.PROJECT_ROOT,'ckpts', 'train.meta']),'rb'));
                 Config.NUM_CLASSES = self.train_meta[0];
-                print(Config.NUM_CLASSES);
                 #self.gen.set_num_classes(Config.NUM_CLASSES);
                 load_checkpoint(c, self.model);
                 #self.model.load_state_dict(checkpoint["state_dict"])
+        self.__model_load_status = found;
+        return found;
+    
 
+    def load_model(self):
+        return self.__load_model();
+
+    def load_model_for_predicition(self):
+        found = self.__load_model();
         self.model_loaded_finished.emit(found);
-        self.model_load_status = found;
 
     '''
         Predict of unlabeled data and update the second entry in  dictionary to 1.
     '''
     def predict(self, lbl, dc):
-        #ptvsd.debug_this_thread();
         #Because predicting is totally based on the initialization of the model,
         # if we haven't loaded a model yet or the loading wasn't successfull
         # we should not do anything and return immediately.
-        if self.model_load_status:
+        if self.__model_load_status:
             self.model.eval();
             with torch.no_grad():
                 radiograph_image = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'images', lbl]),cv2.IMREAD_GRAYSCALE);
@@ -371,7 +356,7 @@ class NetworkTrainer(QObject):
                 radiograph_image = np.repeat(radiograph_image, 3,axis=2);
                 
                 w,h,_ = radiograph_image.shape;
-                transformed = self.valid_transforms(image = radiograph_image);
+                transformed = Config.valid_transforms(image = radiograph_image);
                 radiograph_image = transformed["image"];
                 radiograph_image = radiograph_image.to(Config.DEVICE);
                 #radiograph_image = torch.unsqueeze(radiograph_image,0);
@@ -400,15 +385,3 @@ class NetworkTrainer(QObject):
                     mask = cv2.resize(mask,(h,w), interpolation=cv2.INTER_NEAREST);
                     mask_list.append(mask);
                 self.predict_finished_signal.emit(mask_list, self.train_meta[1]);
-
-
-                # p = p[0]*255;
-                # p = np.array(p, dtype=np.uint8);
-                
-
-                # kernel = np.ones((9,9), dtype=np.uint8);
-                # opening = cv2.morphologyEx(p, cv2.MORPH_OPEN, kernel);
-                # close = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel);
-
-                #save image to predicition directory
-                #cv2.imwrite(os.path.sep.join(['predictions',os.path.basename(lbl)]), mask);

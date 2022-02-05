@@ -1,7 +1,9 @@
 #==================================================================
 #==================================================================
-from copy import deepcopy
+from copy import deepcopy, copy
 from posixpath import basename
+import logging
+import traceback
 from re import I
 from PIL import ImageColor
 from PyQt5.QtCore import QThread, Qt
@@ -9,15 +11,14 @@ from PyQt5.QtWidgets import QSizePolicy, QApplication, QCheckBox, QColorDialog, 
 import sys
 from PyQt5 import QtGui
 from PyQt5 import QtWidgets
+import Config
+import Class
 from RadiographViewer import *
 from DataPoolHandler import *
 from Utility import *
 from NetworkTrainer import *
 from ProjectHandler import *
 from PIL.ImageColor import *
-import Config
-import logging
-import traceback
 from CustomWidgets import *
 #==================================================================
 #==================================================================
@@ -354,7 +355,7 @@ class LayerSelectionWindow(QWidget):
         self.box_gridlayout.addWidget(self.count_name_label, 0, 1, 1, 1);
 
         i = 1;
-        self.layers_dict = copy.copy(layers);
+        self.layers_dict = deepcopy(layers);
         for k in layers.keys():
             val = layers[k];
             ckbx = QCheckBox(k);
@@ -470,7 +471,7 @@ class MainWindow(QMainWindow):
     reset_gc_signal = pyqtSignal();
     update_foreground_with_layer_signal = pyqtSignal();
 
-    def __init__(self, data_pool_handler, network_trainer):
+    def __init__(self):
         super().__init__();
         self.setWindowModality(QtCore.Qt.ApplicationModal)
 
@@ -495,8 +496,6 @@ class MainWindow(QMainWindow):
         self.undo_icon = "Icons/Undo_Icon.png";
         self.redo_icon = "Icons/Redo_Icon.png";
         self.scissor_icon = "Icons/Scissor_Icon.png";
-        self.data_pool_handler = data_pool_handler;
-        self.network_trainer = network_trainer;
         self.segmentation_options_window = SegmentationOptionsWindow();
         self.layer_selection_window = LayerSelectionWindow();
         self.trainig_info_window = TrainingInfoWindow();
@@ -507,7 +506,7 @@ class MainWindow(QMainWindow):
         #---------------------------------------------------------------
 
         self.th = QThread();
-        self.network_trainer.moveToThread(self.th);
+        Class.network_trainer.moveToThread(self.th);
         self.th.start();
 
         self.init_ui();
@@ -919,16 +918,16 @@ class MainWindow(QMainWindow):
 
     def get_next_unlabeled(self):
         self.radiograph_view.clear_whole();
-        pixmap = self.data_pool_handler.next_unlabeled();
+        pixmap = Class.data_pool_handler.next_unlabeled();
         #Update name
-        self.radiograph_label.setText(f"Radiograph Name: {self.data_pool_handler.current_radiograph}")
+        self.radiograph_label.setText(f"Radiograph Name: {Class.data_pool_handler.current_radiograph}")
         if pixmap is not None:
             self.radiograph_view.set_image(pixmap);
             #clear all segmentations
             self.segments_list.clear();
     
     def save_project(self, show_dialog = True):
-        self.save_project_signal.emit(self.data_pool_handler.data_list, show_dialog);
+        self.save_project_signal.emit(Class.data_pool_handler.data_list, show_dialog);
     
     def predict_on_unlabeled(self):
         if self.radiograph_view.layer_count != 0:
@@ -950,15 +949,15 @@ class MainWindow(QMainWindow):
             self.load_model_signal.emit();
     
     def update_file_info_label(self):
-        total = len(self.data_pool_handler.data_list);
-        unlabeled = len(self.data_pool_handler.get_all_unlabeled());
+        total = len(Class.data_pool_handler.data_list);
+        unlabeled = len(Class.data_pool_handler.get_all_unlabeled());
         self.file_info_label_status_bar.setText(f'Total radiographs: {total}\tTotal labeled: {total - unlabeled}');
 
     def update_all_radiographs_segments_list(self):
         #First clear the list
         self.all_radiographs_list.clear();
         #Update the list of available already labeled radiographs
-        dl = self.data_pool_handler.data_list;
+        dl = Class.data_pool_handler.data_list;
         for r in dl.keys():
             if dl[r][0] == 'labeled':
                 list_item_meta = LabelledRadListItem();
@@ -992,7 +991,7 @@ class MainWindow(QMainWindow):
             layers.append([lbl,name]);
 
         #Submit all layers and save meta data
-        self.data_pool_handler.submit_label(layers, self.rotation_combo_box.currentText(), self.exposure_combo_box.currentText());
+        Class.data_pool_handler.submit_label(layers, self.rotation_combo_box.currentText(), self.exposure_combo_box.currentText());
             
         self.save_project(False);
         self.get_next_unlabeled();
@@ -1077,9 +1076,9 @@ class MainWindow(QMainWindow):
 
         return_value = msgBox.exec();
         if return_value == QMessageBox.Yes:
-            radiograph_pixmap, mask_pixmap_list = self.data_pool_handler.load_radiograph(txt);
-            self.data_pool_handler.current_radiograph = txt;
-            self.radiograph_label.setText(f"Radiograph Name: {self.data_pool_handler.current_radiograph}")
+            radiograph_pixmap, mask_pixmap_list = Class.data_pool_handler.load_radiograph(txt);
+            Class.data_pool_handler.current_radiograph = txt;
+            self.radiograph_label.setText(f"Radiograph Name: {Class.data_pool_handler.current_radiograph}")
             self.radiograph_view.clear_whole();
             self.segments_list.clear();
 
@@ -1111,11 +1110,11 @@ class MainWindow(QMainWindow):
 
         #We first just try to load the mode. If the loading is successful, we start the prediction.
         if return_value == QMessageBox.Yes:
-            self.data_pool_handler.delete_radiograph(txt);
+            Class.data_pool_handler.delete_radiograph(txt);
             self.update_all_radiographs_segments_list();
             self.update_file_info_label();
             #Update current radiograph if we deleted current one
-            if self.data_pool_handler.current_radiograph == txt:
+            if Class.data_pool_handler.current_radiograph == txt:
                 self.get_next_unlabeled();
     #Slots
     def list_item_changed(self,item):
@@ -1188,7 +1187,7 @@ class MainWindow(QMainWindow):
 
         if dialog.exec_() == QDialog.Accepted:
             paths = dialog.selectedFiles()[0];
-            self.data_pool_handler.add_from_folder(paths);
+            Class.data_pool_handler.add_from_folder(paths);
     
     def open_dicom_folder_slot(self):
         options = QFileDialog.Options()
@@ -1204,7 +1203,7 @@ class MainWindow(QMainWindow):
 
         if dialog.exec_() == QDialog.Accepted:
             paths = dialog.selectedFiles()[0];
-            self.data_pool_handler.add_from_dicom_folder(paths);
+            Class.data_pool_handler.add_from_dicom_folder(paths);
     
     def select_files_slot(self):
         options = QFileDialog.Options()
@@ -1220,7 +1219,7 @@ class MainWindow(QMainWindow):
 
         if dialog.exec_() == QDialog.Accepted:
             path = dialog.selectedFiles();
-            self.data_pool_handler.add_from_files(path);
+            Class.data_pool_handler.add_from_files(path);
 
     def add_segmentation_clicked(self):
         layer_names = self.radiograph_view.get_layer_names();
@@ -1294,8 +1293,8 @@ class MainWindow(QMainWindow):
         self.update_all_radiographs_segments_list()
     
         #Load and set a random image from unlabeled data pool
-        pixmap = self.data_pool_handler.load_random_unlabeled();
-        self.radiograph_label.setText(f"Radiograph Name: {self.data_pool_handler.current_radiograph}")
+        pixmap = Class.data_pool_handler.load_random_unlabeled();
+        self.radiograph_label.setText(f"Radiograph Name: {Class.data_pool_handler.current_radiograph}")
         if pixmap is not None:
             self.radiograph_view.set_image(pixmap);
 
@@ -1413,8 +1412,8 @@ class MainWindow(QMainWindow):
         #predict on the current unlabeled data and save the prediction in folder
         #always load model at first
         if b:
-            lbl = self.data_pool_handler.current_radiograph;
-            self.predict_on_unlabeled_signal.emit(lbl, self.data_pool_handler.data_list);
+            lbl = Class.data_pool_handler.current_radiograph;
+            self.predict_on_unlabeled_signal.emit(lbl, Class.data_pool_handler.data_list);
         else:
             self.busy_indicator_window.hide();
             show_dialoge(QMessageBox.Icon.Critical, f"No model found, train first.", "No model found", QMessageBox.Ok);
@@ -1465,7 +1464,7 @@ class MainWindow(QMainWindow):
     def setup_new_project_slot(self):
         #Setup new project, remove every loaded item.
         self.radiograph_view.clear_whole();
-        self.data_pool_handler.clear_datalist();
+        Class.data_pool_handler.clear_datalist();
         self.segments_list.clear();
         self.all_radiographs_list.clear();
         self.update_file_info_label();
@@ -1503,8 +1502,8 @@ class MainWindow(QMainWindow):
             pixmap = QPixmap.fromImage(qImg);
             self.radiograph_view.set_image(pixmap, reset=False);
         else:
-            pixmap = load_radiograph(os.path.sep.join([Config.PROJECT_ROOT, 'images', self.data_pool_handler.current_radiograph]),
-            self.data_pool_handler.get_current_radiograph_type());
+            pixmap = load_radiograph(os.path.sep.join([Config.PROJECT_ROOT, 'images', Class.data_pool_handler.current_radiograph]),
+            Class.data_pool_handler.get_current_radiograph_type());
             self.radiograph_view.set_image(pixmap, reset=False);
 
     def clip_limit_value_changed(self):
@@ -1519,8 +1518,8 @@ class MainWindow(QMainWindow):
             pixmap = QPixmap.fromImage(qImg);
             self.radiograph_view.set_image(pixmap, reset=False);
         else:
-            pixmap = load_radiograph(os.path.sep.join([Config.PROJECT_ROOT, 'images', self.data_pool_handler.current_radiograph]),
-            self.data_pool_handler.get_current_radiograph_type());
+            pixmap = load_radiograph(os.path.sep.join([Config.PROJECT_ROOT, 'images', Class.data_pool_handler.current_radiograph]),
+            Class.data_pool_handler.get_current_radiograph_type());
             self.radiograph_view.set_image(pixmap, reset=False);
     
     def foreground_clicked(self):
@@ -1597,26 +1596,9 @@ if __name__=='__main__':
     }\
     QPushButton:pressed { background-color: azure; font: 11px;}");
 
-
-    #Create singletons
-    data_pool_handler = DataPoolHandler();
-    network_trainer = NetworkTrainer();
-    window = MainWindow(data_pool_handler = data_pool_handler, network_trainer = network_trainer);
-    project_handler = ProjectHandler();
+    window = MainWindow();
     new_project_window = NewProjectWindow();
-    #---------------------------------------------------------
 
-    # logging.basicConfig(filename='log.txt', level=logging.CRITICAL);
-
-    # root = logging.getLogger()
-    # root.setLevel(logging.CRITICAL)
-
-    # handler = logging.StreamHandler(sys.stdout)
-    # handler.setLevel(logging.CRITICAL)
-    # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    # handler.setFormatter(formatter)
-    # root.addHandler(handler)
-    
     logging.basicConfig(
             level=logging.DEBUG,
             format='%(asctime)s:%(levelname)s:%(name)s:%(message)s',
@@ -1643,39 +1625,39 @@ if __name__=='__main__':
     #raise Exception('Test to standard error')
     #sys.stdout.close()
 
-    data_pool_handler.load_finished_signal.connect(window.load_finished);
-    data_pool_handler.save_project_signal.connect(window.save_project);
-    window.start_train_signal.connect(network_trainer.start_train_slot);
-    network_trainer.train_finsihed_signal.connect(window.update_model_finished_slot);
-    window.save_project_signal.connect(project_handler.save_project);
-    project_handler.open_project_signal.connect(data_pool_handler.open_project_slot);
-    window.load_model_signal.connect(network_trainer.load_model);
-    window.predict_on_unlabeled_signal.connect(network_trainer.predict);
-    network_trainer.predict_finished_signal.connect(window.predict_on_unlabeled_finished);
-    project_handler.set_project_name_signal.connect(window.set_project_name_slot);
-    project_handler.new_project_setup_signal.connect(window.setup_new_project_slot);
-    window.open_project_signal.connect(project_handler.open_project);
-    new_project_window.open_project_signal.connect(project_handler.open_project);
-    window.save_most_recent_project_signal.connect(project_handler.save_most_recent_project);
-    window.save_project_as_signal.connect(project_handler.save_project_as);
+    Class.data_pool_handler.load_finished_signal.connect(window.load_finished);
+    Class.data_pool_handler.save_project_signal.connect(window.save_project);
+    window.start_train_signal.connect(Class.network_trainer.start_train_slot);
+    Class.network_trainer.train_finsihed_signal.connect(window.update_model_finished_slot);
+    window.save_project_signal.connect(Class.project_handler.save_project);
+    Class.project_handler.open_project_signal.connect(Class.data_pool_handler.open_project_slot);
+    window.load_model_signal.connect(Class.network_trainer.load_model_for_predicition);
+    window.predict_on_unlabeled_signal.connect(Class.network_trainer.predict);
+    Class.network_trainer.predict_finished_signal.connect(window.predict_on_unlabeled_finished);
+    Class.project_handler.set_project_name_signal.connect(window.set_project_name_slot);
+    Class.project_handler.new_project_setup_signal.connect(window.setup_new_project_slot);
+    window.open_project_signal.connect(Class.project_handler.open_project);
+    new_project_window.open_project_signal.connect(Class.project_handler.open_project);
+    window.save_most_recent_project_signal.connect(Class.project_handler.save_most_recent_project);
+    window.save_project_as_signal.connect(Class.project_handler.save_project_as);
     window.radiograph_view.size_changed_signal.connect(window.size_value_changed_slot);
-    window.update_meta_signal.connect(project_handler.update_project_meta_slot);
-    window.get_project_names_signal.connect(project_handler.get_project_names_slot);
-    new_project_window.confirm_new_project_clicked_signal.connect(project_handler.new_project);
-    window.confirm_new_project_clicked_signal.connect(project_handler.new_project);
-    network_trainer.update_train_info_iter.connect(window.trainig_info_window.update_train_info_iter_slot);
-    network_trainer.update_valid_info_iter.connect(window.trainig_info_window.update_valid_info_iter_slot);
-    network_trainer.update_train_info_epoch_train.connect(window.trainig_info_window.update_train_info_epoch_train_slot);
-    network_trainer.update_train_info_epoch_valid.connect(window.trainig_info_window.update_train_info_epoch_valid_slot);
-    network_trainer.augmentation_finished_signal.connect(window.trainig_info_window.augmentation_finished_slot);
-    network_trainer.model_loaded_finished.connect(window.model_loaded_finished_slot);
+    window.update_meta_signal.connect(Class.project_handler.update_project_meta_slot);
+    window.get_project_names_signal.connect(Class.project_handler.get_project_names_slot);
+    new_project_window.confirm_new_project_clicked_signal.connect(Class.project_handler.new_project);
+    window.confirm_new_project_clicked_signal.connect(Class.project_handler.new_project);
+    Class.network_trainer.update_train_info_iter.connect(window.trainig_info_window.update_train_info_iter_slot);
+    Class.network_trainer.update_valid_info_iter.connect(window.trainig_info_window.update_valid_info_iter_slot);
+    Class.network_trainer.update_train_info_epoch_train.connect(window.trainig_info_window.update_train_info_epoch_train_slot);
+    Class.network_trainer.update_train_info_epoch_valid.connect(window.trainig_info_window.update_train_info_epoch_valid_slot);
+    Class.network_trainer.augmentation_finished_signal.connect(window.trainig_info_window.augmentation_finished_slot);
+    Class.network_trainer.model_loaded_finished.connect(window.model_loaded_finished_slot);
     window.foreground_clicked_signal.connect(window.radiograph_view.foreground_clicked_slot);
     window.background_clicked_signal.connect(window.radiograph_view.background_clicked_slot);
     window.update_gc_signal.connect(window.radiograph_view.update_gc_slot);
     window.reset_gc_signal.connect(window.radiograph_view.reset_gc_slot);
     window.update_foreground_with_layer_signal.connect(window.radiograph_view.update_foreground_with_layer_slot);
 
-    ret = project_handler.open_project();
+    ret = Class.project_handler.open_project();
     
     if not ret:
         #No project found so show project name dialoge.

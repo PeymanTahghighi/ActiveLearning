@@ -11,16 +11,18 @@ from PyQt5 import QtGui
 from ignite import base
 from pandas.core.frame import DataFrame
 import pickle
-from Utility import *
 from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import QObject, pyqtSlot, pyqtSignal
 import numpy as np
 from shutil import copyfile
 from glob import glob
-import pandas as pd
-import Config
 import pydicom
+import pandas as pd
 from pydicom.fileset import FileSet
+import Class
+from Utility import *
+import Config
+from Strategy import get_grad_embeddings, get_cluster_centers
 #==================================================================
 #==================================================================
 
@@ -141,6 +143,9 @@ class DataPoolHandler(QObject):
         return pixmap;
 
     def next_unlabeled(self):
+        '''
+            Here we apply our data selection strategy.
+        '''
         unlabeled = self.get_all_unlabeled();
 
         if len(unlabeled) == 0:
@@ -148,15 +153,24 @@ class DataPoolHandler(QObject):
              f"No unlabeled radiographs found. Please add new radiographs or selected images already labaled from the list", 
              "No radiographs found",QMessageBox.Ok);
             return None;
+
+        #get model first. If no moodel exists, then we will use random sampling.
+        #This is indeed useful in first step when we haven't trained any models 
+        #yet or in situation that we lost the model.
+        #TODO implement badge gradient sampling
+        m, sts = Class.network_trainer.get_model();
+
+        # if sts is True:
+        #     idx = self.__get_data_badge_strategy(unlabeled, m);
+        # else:
+        #random data sampling
+        idx = np.random.randint(0,len(unlabeled));
+        while unlabeled[idx][0] == self.__current_radiograph:
+            idx = np.random.randint(0,len(unlabeled));
         
-        #Randomly select one data
-        r = np.random.randint(0,len(unlabeled));
-        while unlabeled[r][0] == self.__current_radiograph:
-            r = np.random.randint(0,len(unlabeled));
-        
-        p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[r][0]]);
-        pixmap = load_radiograph(p, unlabeled[r][1]);
-        self.__current_radiograph = unlabeled[r][0];
+        p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[idx][0]]);
+        pixmap = load_radiograph(p, unlabeled[idx][1]);
+        self.__current_radiograph = unlabeled[idx][0];
 
         return pixmap;
     
@@ -309,7 +323,6 @@ class DataPoolHandler(QObject):
                 cnt += 1;
         return cnt;
     
-
     def __load_folder(self, folder_path):
         """
             This function search for all image format in the given directory and
@@ -329,6 +342,14 @@ class DataPoolHandler(QObject):
         for p in paths:
             item_name = self.__check_duplicate_name(os.path.basename(p));
             cnt += self.__add_image_to_database(p, item_name);
-        
         return cnt;
+    def __get_data_badge_strategy(self, unlabeled, model):
+        X = [];
+        for entry in unlabeled:
+            X.append(os.path.sep.join([Config.PROJECT_ROOT, "images", entry[0]]));
+        grad_embeddings = get_grad_embeddings(X, model);
+        idx = get_cluster_centers(grad_embeddings, 1, None);
+        return idx;
+
+
 #------------------------------------------------------------------

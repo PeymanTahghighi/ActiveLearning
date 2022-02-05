@@ -26,9 +26,10 @@ import matplotlib.pyplot as plt
 import Config
 import logging
 
+from utils import JSD
+
 class TrainValidSplit():
     def __init__(self):
-
         pass
 
     def get(self, root_radiograph, root_mask, valid_split, layers_names):
@@ -37,10 +38,13 @@ class TrainValidSplit():
         self.mask_names = [];
         self.radiograph_names = [];
 
-        radiograph_names, mask_names = get_radiograph_label_meta(root_radiograph, root_mask);
+        all_radiograph_names, all_mask_names = get_radiograph_label_meta(root_radiograph, root_mask);
+        selected_radiographs = [];
+        selected_masks = [];
+
         #Here, we first find images that has all the user selected layers
-        for m in range(len(mask_names)):
-            df = pickle.load(open(mask_names[m],'rb'));
+        for m in range(len(all_mask_names)):
+            df = pickle.load(open(all_mask_names[m],'rb'));
             df_keys = df.keys();
             
             add = True;
@@ -51,24 +55,68 @@ class TrainValidSplit():
 
             #If this image has all the layers wanted, add it to the list of radiographs
             if add is True:
-                self.mask_names.append(mask_names[m]);
-                self.radiograph_names.append(radiograph_names[m]);
+                selected_masks.append(all_mask_names[m]);
+                selected_radiographs.append(all_radiograph_names[m]);
+        
+        selected_indices = [];
+        selected_index_fir_step = np.random.randint(0,len(selected_radiographs));
+        selected_indices.append(selected_index_fir_step);
+        hist_r = cv2.calcHist([cv2.imread(selected_radiographs[selected_index_fir_step], cv2.IMREAD_GRAYSCALE)],[0], None, [256], [0,256] );
+        hist_r = hist_r / hist_r.sum();
+        max_dist = 0;
+        selected_index_sec_step = 0;
+        for i in range(len(selected_radiographs)):
+            if i != selected_index_fir_step:
+                hist_i = cv2.calcHist([cv2.imread(selected_radiographs[i], cv2.IMREAD_GRAYSCALE)],[0], None, [256], [0,256] );
+                hist_i = hist_i / hist_i.sum();
+                dist = JSD(hist_i, hist_r);
+                if dist > max_dist:
+                    max_dist = dist;
+                    selected_index_sec_step = i;
+        
+        selected_indices.append(selected_index_sec_step);
+
+        dataset_size = len(selected_radiographs);
+        train_data = int(np.ceil((1-valid_split) * dataset_size)) - 2;
+
+        while(train_data != 0):
+            max_dist = 0;
+            selected_idx = 0;
+            for i in range(len(selected_radiographs)):
+                hist_i = cv2.calcHist([cv2.imread(selected_radiographs[i], cv2.IMREAD_GRAYSCALE)],[0], None, [256], [0,256] );
+                hist_i = hist_i / hist_i.sum();
+                min_dist = float('inf');
+                for sel in selected_indices:
+                    if i != sel:
+                        hist_sel = cv2.calcHist([cv2.imread(selected_radiographs[sel], cv2.IMREAD_GRAYSCALE)],[0], None, [256], [0,256] );
+                        hist_sel = hist_sel / hist_sel.sum();
+                        dist = JSD(hist_sel, hist_i);
+                        if dist < min_dist:
+                            min_dist = dist;
+                    
+                if min_dist > max_dist and i not in selected_indices:
+                    max_dist = min_dist;
+                    selected_idx = i;
+            
+            selected_indices.append(selected_idx);
+            train_data -= 1;
+        
+                    
 
         #Split datat into train and validation
-        dataset_size = len(self.mask_names);
-        split = int(np.ceil(valid_split * dataset_size));
+        
+        selected_radiographs = np.array(selected_radiographs);
+        selected_masks = np.array(selected_masks);
 
-        print(f"[TRAIN INFO] | Train size(before augmentation): {dataset_size - split} \tValid size: {split}");
+        print(f"[TRAIN INFO] | Train size(before augmentation): {len(selected_indices)} \tValid size: {dataset_size - len(selected_indices)}");
 
-        self.radiograph_names, self.mask_names = shuffle(self.radiograph_names, self.mask_names, random_state = 40);
+        train_radiograph_filenames = selected_radiographs[selected_indices];
+        train_mask_filenames = selected_masks[selected_indices];
 
-        split = dataset_size - split;
+        valid_indices = list(set(np.arange(0,dataset_size)) -  set(selected_indices));
 
-        train_radiograph_filenames = self.radiograph_names[:split]
-        train_mask_filenames = self.mask_names[:split]
-
-        valid_radiograph_filenames = self.radiograph_names[split:]
-        valid_mask_filenames = self.mask_names[split:]
+        valid_radiograph_filenames = selected_radiographs[valid_indices]
+        valid_mask_filenames = selected_masks[valid_indices]
 
         return train_radiograph_filenames, train_mask_filenames, valid_radiograph_filenames, valid_mask_filenames;
 
@@ -218,36 +266,16 @@ class NetworkDataset(Dataset):
         logging.info("start of get item");
 
         radiograph_image_path = self.radiographs[index];
-        mask_image_path = self.masks[index];
+        
         radiograph_image = cv2.imread(radiograph_image_path,cv2.IMREAD_GRAYSCALE);
         clahe = cv2.createCLAHE(7,(11,11));
         radiograph_image = clahe.apply(radiograph_image);
         radiograph_image = np.expand_dims(radiograph_image, axis=2);
         radiograph_image = np.repeat(radiograph_image, 3,axis=2);
-       
-        # for j in range(1,7):
-        #     for i in range(3,11,2):
-        #         clahe = cv2.createCLAHE(j,(i,i));
-        #         radiograph_image_q = clahe.apply(radiograph_image);
-        #         cv2.imwrite(f"fhist equal_{i}{j}_5.png", radiograph_image_q);
-        # cv2.imwrite("normal.png", radiograph_image);
-        #sns.distplot(radiograph_image.ravel(), label=f'Mean : {np.mean(radiograph_image)}, std: {np.std(radiograph_image)}');
-        #plt.legend(loc='best');
-        #plt.savefig('dist-before.png');
 
-        #radiograph_image  = np.array(F.equalize(Image.fromarray(radiograph_image)));
-        #cv2.imwrite('normal.png',radiograph_image);
-       # cv2.imwrite('equalize.png',temp);
-
-        mask_image = cv2.imread(mask_image_path,cv2.IMREAD_GRAYSCALE);
-        #cv2.imshow("rad", radiograph_image);
-        #cv2.imshow("mask", mask_image);
-        #cv2.waitKey();
-        # cv2.imshow('mask', mask_image);
-        # cv2.waitKey();
-        # mask_image[mask_image == 255] = 1;
-
-        if self.transform is not None:
+        if self.masks is not None:
+            mask_image_path = self.masks[index];
+            mask_image = cv2.imread(mask_image_path,cv2.IMREAD_GRAYSCALE);
             transformed = self.transform(image = radiograph_image, mask = mask_image);
             radiograph_image = transformed["image"];
             mask_image = transformed['mask'];
@@ -257,12 +285,12 @@ class NetworkDataset(Dataset):
             #plt.savefig('dist-after.png');
             #mask_image = transformed["mask"]/255;
             mask_image = torch.unsqueeze(mask_image, 0);
-            #m = mask_image.detach().cpu().numpy();
-            # cv2.imshow('m',m*255);
-            # cv2.waitKey();
+            return radiograph_image, mask_image, index;
 
-        return radiograph_image, mask_image, index;
-
+        transformed = self.transform(image = radiograph_image);
+        radiograph_image = transformed["image"];
+        return radiograph_image, index;
+            
 def analyze_dataset():
     radiograph_root = os.path.sep.join(["dataset","CXR_png"]);
     mask_root = os.path.sep.join(["dataset","masks"]);

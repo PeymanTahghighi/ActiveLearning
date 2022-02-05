@@ -33,6 +33,21 @@ def gradient_penalty(critic, real, fake, image):
     gradient_penalty = torch.mean((gradient_norm - 1)**2);
     return gradient_penalty * 10.0;
 
+def cross_entropy(p,q):
+    return np.sum(-p*np.log(q));
+
+def JSD(p,q):
+    p = p + Config.EPSILON;
+    q = q + Config.EPSILON;
+    avg = (p+q)/2;
+    jsd = (cross_entropy(p,avg) - cross_entropy(p,p))/2 + (cross_entropy(q,avg) - cross_entropy(q,q))/2;
+    #clamp
+    if jsd > 1.0:
+        jsd = 1.0;
+    elif jsd < 0.0:
+        jsd = 0.0;
+    
+    return jsd;
 
 def save_samples(model, val_loader, epoch, folder):
     x, y, _ = next(iter(val_loader))
@@ -71,7 +86,6 @@ def save_samples(model, val_loader, epoch, folder):
             gt_grid = make_grid(y.float(), Config.BATCH_SIZE)
             save_image(gt_grid, os.path.sep.join([Config.PROJECT_ROOT, folder, f"gt.png"]))
 
-
 def save_checkpoint(model, epoch):
     print("=> Saving checkpoint")
     checkpoint = {
@@ -79,7 +93,6 @@ def save_checkpoint(model, epoch):
         "epoch" : epoch
     }
     torch.save(checkpoint, os.path.sep.join([Config.PROJECT_ROOT, "ckpts", f"ckpt.pt"]))
-
 
 def load_checkpoint(checkpoint_file, model):
     if(os.path.exists(checkpoint_file)):
