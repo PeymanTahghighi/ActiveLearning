@@ -1,3 +1,5 @@
+from copy import deepcopy
+from glob import glob
 from shutil import copyfile
 from PyQt5.QtWidgets import QMessageBox
 import cv2
@@ -123,12 +125,7 @@ class ProjectHandler(QObject):
         self.__projects_root = Config.PROJECT_ROOT;
 
         self.set_project_name_signal.emit(proj_name);
-        data_list = pickle.load(open(os.path.sep.join([path,proj_name + '.uog']),'rb'));
-        # dc = pd.read_pickle(os.path.sep.join([path,proj_name + '.uog']));
-        # dc = dc.to_dict(orient="list");
-        # data_list = dict();
-        # for i in range(len(dc['image_path'])):
-        #     data_list[dc['image_path'][i]] = dc['state'][i];
+        data_list = pickle.load(open(os.path.sep.join([path,proj_name + '.uog']),'rb'));\
         self.open_project_signal.emit(data_list, False);
 
         show_dialoge(QMessageBox.Icon.Information, f"Project successfully saved to new path","Save succeed", QMessageBox.Ok);
@@ -181,19 +178,25 @@ class ProjectHandler(QObject):
                 Config.PROJECT_ROOT = self.__projects_root;
 
                 data_list = pickle.load(open(project_path,'rb'));
-                # for k in data_list.keys():
-                #     data_list[k][0] = data_list[k][0][0];
-                # dc = dc.to_dict(orient="list");
-                # data_list = dict();
-                # for i in range(len(dc['image_path'])):
-                #     data_list[dc['image_path'][i]] = [dc['state'][i], 'image'];
-                # data_list.pop('10000004');
-                # data_list.pop('10000003');
-                # data_list.pop('10000005');
-                # self.save_project(data_list, show_dialoge_bool=False);
+
+                tmp_datalist, change = self.__check_for_unload_images(data_list);
+
+                if change is True:
+                    msgBox = QMessageBox()
+                    msgBox.setIcon(QMessageBox.Icon.Warning)
+                    msgBox.setText("Your project is not in sync with your local image database. Do you want to update your directory now?")
+                    msgBox.setWindowTitle("Confirmation")
+                    msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No);
+
+                    return_value = msgBox.exec()
+
+                    if return_value == QMessageBox.Yes:
+                        data_list = deepcopy(tmp_datalist);
+
+                self.save_most_recent_project();
+
                 self.open_project_signal.emit(data_list, True);
                 self.set_project_name_signal.emit(proj_name);
-                self.save_most_recent_project();
 
                 return True;
             else:
@@ -217,14 +220,41 @@ class ProjectHandler(QObject):
                 Config.PROJECT_ROOT = project_root;
                 self.__projects_root = project_root;
 
-                self.set_project_name_signal.emit(project_name);
-
-                self.open_project_signal.emit(data_list, True);
-
                 #set this project as the most recent project
                 self.save_most_recent_project();
+
+                self.set_project_name_signal.emit(project_name);
+                self.open_project_signal.emit(data_list, True);
+
                 
                 return True;
             else:
                 show_dialoge(QMessageBox.Icon.Critical, f"Project couldn't be found","Error", QMessageBox.Ok);
         pass
+
+    def __check_for_unload_images(self, data_list):
+        '''
+            Here we check labels folder to check for images that
+            have not been added to datalist of the project and 
+            ask user about them
+        '''
+
+        temp_data_list = deepcopy(data_list);
+
+        lbl_lst = glob(os.path.sep.join([Config.PROJECT_ROOT, "images"]) + "\\*");
+
+        change = False;
+        for l in lbl_lst:
+            file_name = os.path.basename(l);
+            path_to_meta = os.path.sep.join([Config.PROJECT_ROOT, 'labels', file_name[:file_name.rfind(".")] + ".meta"]);
+            if (not file_name in data_list and os.path.exists(path_to_meta)):
+                temp_data_list[file_name] = ['labeled', 'image'];
+                change = True;
+            elif (data_list[file_name][0] == 'unlabeled' and os.path.exists(path_to_meta)):
+                temp_data_list[file_name][0] = 'labeled';
+                change = True;
+        
+
+        return temp_data_list, change;
+        
+

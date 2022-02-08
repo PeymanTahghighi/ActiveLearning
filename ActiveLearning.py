@@ -1555,7 +1555,7 @@ class MainWindow(QMainWindow):
         if idx == 1:
             self.automatic_segmentation_enable();
             pass
-        #if we moved to manual segmentation tabl
+        #if we moved to manual segmentation table
         if idx == 0:
             self.manual_segmentation_enable();
             pass
@@ -1577,7 +1577,6 @@ if __name__=='__main__':
     torch.autograd.profiler.profile(False)
     torch.autograd.profiler.emit_nvtx(False)
     torch.backends.cudnn.benchmark = True
-
     
     app = QApplication(sys.argv);
     app.setStyleSheet("QPushButton {\
