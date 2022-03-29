@@ -58,16 +58,21 @@ class TrainValidSplit():
                 selected_masks.append(all_mask_names[m]);
                 selected_radiographs.append(all_radiograph_names[m]);
         
+        #calculate histogram of all selected radiographs once
+        selected_radiographs_hist = [];
+        for sr in selected_radiographs:
+            selected_radiographs_hist.append(cv2.calcHist([cv2.imread(sr, cv2.IMREAD_GRAYSCALE)],[0], None, [256], [0,256] ))
+
         selected_indices = [];
-        selected_index_fir_step = np.random.randint(0,len(selected_radiographs));
+        selected_index_fir_step = np.random.randint(0,len(selected_radiographs_hist));
         selected_indices.append(selected_index_fir_step);
-        hist_r = cv2.calcHist([cv2.imread(selected_radiographs[selected_index_fir_step], cv2.IMREAD_GRAYSCALE)],[0], None, [256], [0,256] );
+        hist_r = selected_radiographs_hist[selected_index_fir_step];
         hist_r = hist_r / hist_r.sum();
         max_dist = 0;
         selected_index_sec_step = 0;
-        for i in range(len(selected_radiographs)):
+        for i in range(len(selected_radiographs_hist)):
             if i != selected_index_fir_step:
-                hist_i = cv2.calcHist([cv2.imread(selected_radiographs[i], cv2.IMREAD_GRAYSCALE)],[0], None, [256], [0,256] );
+                hist_i = selected_radiographs_hist[i];
                 hist_i = hist_i / hist_i.sum();
                 dist = JSD(hist_i, hist_r);
                 if dist > max_dist:
@@ -76,19 +81,19 @@ class TrainValidSplit():
         
         selected_indices.append(selected_index_sec_step);
 
-        dataset_size = len(selected_radiographs);
+        dataset_size = len(selected_radiographs_hist);
         train_data = int(np.ceil((1-valid_split) * dataset_size)) - 2;
 
         while(train_data != 0):
             max_dist = 0;
             selected_idx = 0;
-            for i in range(len(selected_radiographs)):
-                hist_i = cv2.calcHist([cv2.imread(selected_radiographs[i], cv2.IMREAD_GRAYSCALE)],[0], None, [256], [0,256] );
+            for i in range(len(selected_radiographs_hist)):
+                hist_i = selected_radiographs_hist[i];
                 hist_i = hist_i / hist_i.sum();
                 min_dist = float('inf');
                 for sel in selected_indices:
                     if i != sel:
-                        hist_sel = cv2.calcHist([cv2.imread(selected_radiographs[sel], cv2.IMREAD_GRAYSCALE)],[0], None, [256], [0,256] );
+                        hist_sel = selected_radiographs_hist[sel];
                         hist_sel = hist_sel / hist_sel.sum();
                         dist = JSD(hist_sel, hist_i);
                         if dist < min_dist:
@@ -104,7 +109,6 @@ class TrainValidSplit():
                     
 
         #Split datat into train and validation
-        
         selected_radiographs = np.array(selected_radiographs);
         selected_masks = np.array(selected_masks);
 
@@ -144,16 +148,18 @@ class OfflineAugmentation():
         
         self.clear_augmentations();
 
+        num_classes = len(layer_names);
+
         #For cost-sensitive learning
         #We should add one for the background layer
-        layer_weight = np.zeros((len(layer_names) + 1), dtype=np.float);
+        layer_weight = np.zeros((len(layer_names),2), dtype=np.float);
 
         
         for i in range(len(radiographs)):
             #load both radiograph and mask
             radiograph_image = cv2.imread(radiographs[i],cv2.IMREAD_UNCHANGED);
             mask_image = np.zeros(shape = (radiograph_image.shape[0],
-             radiograph_image.shape[1], 1), dtype=np.uint8);
+             radiograph_image.shape[1], num_classes), dtype=np.uint8);
 
             #Open meta file and open relating masks
             df = pd.read_pickle(masks[i]);
@@ -164,12 +170,19 @@ class OfflineAugmentation():
                 layer = desc[0];
                 mask_image_layer = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'labels', mask_name]),cv2.IMREAD_UNCHANGED);
                 mask_image_layer = np.sum(mask_image_layer[:,:,:3], axis=2);
-                mask_image[(mask_image_layer != 0) == True] = k+1;
+                marked_pixels = (mask_image_layer != 0);
+                #set the corresponding class to one
+                mask_image[marked_pixels == True,k] = 1;
 
-            #count each layer classes in mask image and them
-            for j in range(len(layer_weight)):
-                c = (mask_image == j).sum();
-                layer_weight[j] = layer_weight[j] + c;
+                layer_weight[k][0] += np.sum(marked_pixels);
+                layer_weight[k][1] += mask_image_layer.shape[0] * mask_image_layer.shape[1];
+
+            # #count each layer classes in mask image and them
+            # for j in range(len(layer_weight)):
+            #     c = (mask_image == j).sum();
+            #     layer_weight[j] = layer_weight[j] + c;
+
+
             segmap = SegmentationMapsOnImage(mask_image, shape=radiograph_image.shape);
 
             filename = os.path.basename(radiographs[i]);
@@ -177,15 +190,15 @@ class OfflineAugmentation():
 
             #Add original image as the first in list
             rad_path = os.path.sep.join([o,'Aug-Tmp', f'{filename}-({int(0)}).png']);
-            mask_path = os.path.sep.join([o,'Aug-Tmp', f'{filename}-m-({int(0)}).png']);
+            mask_path = os.path.sep.join([o,'Aug-Tmp', f'{filename}-m-({int(0)}).msk']);
 
             cv2.imwrite(rad_path,np.array(radiograph_image));
-            cv2.imwrite(mask_path,np.array(mask_image));
+            pickle.dump(mask_image, open(mask_path, "wb"));
 
-            if self.debug_dataset == True:
-                mask_path_debug = os.path.sep.join([o,'Aug-Tmp', f'{filename}-md-({int(0)}).png']);
-                d = segmap.draw(size=segmap.shape[:2])[0];
-                cv2.imwrite(mask_path_debug,d);
+            # if self.debug_dataset == True:
+            #     mask_path_debug = os.path.sep.join([o,'Aug-Tmp', f'{filename}-md-({int(0)}).png']);
+            #     d = segmap.draw(size=segmap.shape[:2])[0];
+            #     cv2.imwrite(mask_path_debug,d);
 
             radiograph_list.append(rad_path);
             mask_list.append(mask_path);
@@ -244,19 +257,25 @@ class NetworkDataset(Dataset):
                 filename = os.path.basename(masks[m]);
                 filename = filename[:filename.find('.')];
                 df = pd.read_pickle(masks[m]);
-                mask_image = np.zeros(shape = (dummy.shape[0], dummy.shape[1], 1), dtype=np.uint8);
+                num_classes = len(layer_names);
+
+                mask_image = np.zeros(shape = (dummy.shape[0], dummy.shape[1], num_classes), dtype=np.uint8);
                 for k in range(len(layer_names)):
                     desc = df[layer_names[k]];
                     mask_name = desc[2];
                     layer = desc[0];
+                    
                     mask_image_layer = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'labels', mask_name]),cv2.IMREAD_UNCHANGED);
                     mask_image_layer = np.sum(mask_image_layer[:,:,:3], axis=2);
 
-                    mask_image[(mask_image_layer != 0) == True] = k + 1;
+                    marked_pixels = (mask_image_layer != 0);
 
-                mask_path = os.path.sep.join([o,'valid-masks', f'{filename}-m.png']);
+                    #set the corresponding class to one
+                    mask_image[marked_pixels == True,k] = 1;
+
+                mask_path = os.path.sep.join([o,'valid-masks', f'{filename}-m.msk']);
                 self.masks.append(mask_path);
-                cv2.imwrite(mask_path, mask_image);
+                pickle.dump(mask_image, open(mask_path, 'wb'));
             
     def __len__(self):
         logging.info(f"Data size: {len(self.radiographs)}");
@@ -275,7 +294,7 @@ class NetworkDataset(Dataset):
 
         if self.masks is not None:
             mask_image_path = self.masks[index];
-            mask_image = cv2.imread(mask_image_path,cv2.IMREAD_GRAYSCALE);
+            mask_image = pickle.load(open(mask_image_path, "rb"));
             transformed = self.transform(image = radiograph_image, mask = mask_image);
             radiograph_image = transformed["image"];
             mask_image = transformed['mask'];
@@ -284,7 +303,7 @@ class NetworkDataset(Dataset):
             #plt.legend(loc='best');
             #plt.savefig('dist-after.png');
             #mask_image = transformed["mask"]/255;
-            mask_image = torch.unsqueeze(mask_image, 0);
+            #mask_image = torch.unsqueeze(mask_image, 0);
             return radiograph_image, mask_image, index;
 
         transformed = self.transform(image = radiograph_image);

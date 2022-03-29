@@ -158,7 +158,7 @@ class DataPoolHandler(QObject):
         #This is indeed useful in first step when we haven't trained any models 
         #yet or in situation that we lost the model.
         #TODO implement badge gradient sampling
-        m, sts = Class.network_trainer.get_model();
+        #m, sts = Class.network_trainer.get_model();
 
         # if sts is True:
         #     idx = self.__get_data_badge_strategy(unlabeled, m);

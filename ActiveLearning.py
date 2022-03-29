@@ -9,6 +9,7 @@ from PIL import ImageColor
 from PyQt5.QtCore import QThread, Qt
 from PyQt5.QtWidgets import QSizePolicy, QApplication, QCheckBox, QColorDialog, QComboBox, QDesktopWidget, QGridLayout, QGroupBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QProgressBar, QPushButton, QRadioButton, QScrollArea, QSlider, QFileDialog, QDialog, QStatusBar, QTabBar, QTabWidget, QTextEdit, QVBoxLayout
 import sys
+from torch.nn.functional import one_hot
 from PyQt5 import QtGui
 from PyQt5 import QtWidgets
 import Config
@@ -388,7 +389,7 @@ class LayerSelectionWindow(QWidget):
         if num_selected != 0:
             #We first determine number of classes for training here
             #Since we always have background layer as the first layer we should add 1
-            Config.NUM_CLASSES = num_selected + 1;
+            Config.NUM_CLASSES = num_selected;
             
             self.confirm_clicked_signal.emit(layers_selected);
             self.hide();
@@ -1572,6 +1573,7 @@ class MainWindow(QMainWindow):
     #--------------------------------------------------------------
     
 if __name__=='__main__':
+
 
     torch.autograd.set_detect_anomaly(False)
     torch.autograd.profiler.profile(False)

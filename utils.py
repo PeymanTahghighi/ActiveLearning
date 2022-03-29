@@ -53,38 +53,34 @@ def save_samples(model, val_loader, epoch, folder):
     x, y, _ = next(iter(val_loader))
     x, y = x.to(Config.DEVICE), y.to(Config.DEVICE)
     with torch.no_grad():
-        y_fake, _ = model(x)
-        if Config.NUM_CLASSES > 2:
-            y_fake = torch.argmax(y_fake,dim=1).unsqueeze(dim = 1);
-        else:
-            y_fake = (y_fake > 0.5).float();
-        
-        y_fake_colored = torch.zeros((Config.BATCH_SIZE, 3, Config.IMAGE_SIZE, Config.IMAGE_SIZE)).long().to(Config.DEVICE);
-        for i in range(1,Config.NUM_CLASSES):
-            col = np.full((Config.BATCH_SIZE,Config.IMAGE_SIZE,Config.IMAGE_SIZE, Config.NUM_CLASSES), [Config.PREDEFINED_COLORS[i-1][0], 
-            Config.PREDEFINED_COLORS[i-1][1], 
-            Config.PREDEFINED_COLORS[i-1][2]]);
-            col = torch.tensor(col).to(Config.DEVICE).permute(0,3,1,2).long();
-            cond = (y_fake!=i).bool();
-            y_fake_colored = y_fake_colored.where(cond, col);
-            # n = y_fake_colored.permute(0,2,3,1,).cpu().detach().numpy();
-            # n = np.array(n,dtype=np.uint8);
-            # cv2.imshow('t',n[0]);
-            # cv2.waitKey();
-        # a = y_fake[y_fake == 1];
-        # y_fake_colored[a == 1] = 50;
-        #n = y_fake_colored.permute(0,2,3,1,).cpu().detach().numpy();
-        #cv2.imshow('t',n[0]);
-        #cv2.waitKey();
-        #y_fake_colored[a] = 255;
-        fake_grid = make_grid(y_fake_colored, Config.BATCH_SIZE);
-        save_image(fake_grid.float(), os.path.sep.join([Config.PROJECT_ROOT, folder, f"input_{epoch}.png"]))
+        output, _ = model(x)
+        output = (torch.sigmoid(output) > 0.5).permute(0,2,3,1);
+        b_size = output.size()[0];
+
+        for b in range(b_size):
+            b_output = output[b];
+
+            output_colored = torch.zeros((Config.NUM_CLASSES, Config.IMAGE_SIZE, Config.IMAGE_SIZE, 3)).long().to(Config.DEVICE);
+            for i in range(Config.NUM_CLASSES):
+                col = np.full((Config.IMAGE_SIZE,Config.IMAGE_SIZE, 3), [Config.PREDEFINED_COLORS[i][0], 
+                Config.PREDEFINED_COLORS[i][1], 
+                Config.PREDEFINED_COLORS[i][2]]);
+
+                output_cls = b_output[:,:,i];
+                
+                col = torch.tensor(col).to(Config.DEVICE).long();
+                a = output_colored[i];
+                cond = (output_cls == 1).bool().unsqueeze(axis = 2);
+                output_colored[i] = torch.where(cond, col, output_colored[i]);
+
+            output_grid = make_grid(output_colored.permute(0,3,1,2), Config.NUM_CLASSES);
+            save_image(output_grid.float(), os.path.sep.join([Config.PROJECT_ROOT, folder, f"input_{epoch}-{b}.png"]))
 
         if epoch == 1:
-            radiograph_grid = make_grid(x *0.5+ 0.5, Config.BATCH_SIZE)
+            radiograph_grid = make_grid(x*0.229 + 0.485, b_size)
             save_image(radiograph_grid, os.path.sep.join([Config.PROJECT_ROOT, folder, f"radiograph.png"]))
-            gt_grid = make_grid(y.float(), Config.BATCH_SIZE)
-            save_image(gt_grid, os.path.sep.join([Config.PROJECT_ROOT, folder, f"gt.png"]))
+            #gt_grid = make_grid(y.float(), Config.BATCH_SIZE)
+            #save_image(gt_grid, os.path.sep.join([Config.PROJECT_ROOT, folder, f"gt.png"]))
 
 def save_checkpoint(model, epoch):
     print("=> Saving checkpoint")
