@@ -504,6 +504,7 @@ class MainWindow(QMainWindow):
         self.background_gc_selected = False;
         self.foreground_gc_selected = True;
         self.erase_gc_selected = False;
+        self.predict_on_unlabeled_choice = 0;
         #---------------------------------------------------------------
 
         self.th = QThread();
@@ -934,15 +935,16 @@ class MainWindow(QMainWindow):
         if self.radiograph_view.layer_count != 0:
             msgBox = QMessageBox()
             msgBox.setIcon(QMessageBox.Icon.Warning)
-            msgBox.setText("If you continue this operation, all already drawn layers will be deleted and you already have layers that are not submitted. Do you want to continue? If you continue, you won't be able to undo.")
+            msgBox.setText("Do you want your new prediction to append to layers you already have? If you select no, all already drawn layers will be deleted.")
             msgBox.setWindowTitle("Prediction Confirmation")
-            msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
             #msgBox.buttonClicked.connect(msgButtonClick)
 
             return_value = msgBox.exec()
 
             #We first just try to load the mode. If the loading is successful, we start the prediction.
-            if return_value == QMessageBox.Yes:
+            if return_value == QMessageBox.Yes or return_value == QMessageBox.No:
+                self.predict_on_unlabeled_choice = 1 if return_value == QMessageBox.Yes else 0;
                 self.busy_indicator_window.show();
                 self.load_model_signal.emit();
         else:
@@ -1420,10 +1422,14 @@ class MainWindow(QMainWindow):
             show_dialoge(QMessageBox.Icon.Critical, f"No model found, train first.", "No model found", QMessageBox.Ok);
 
     def predict_on_unlabeled_finished(self, layers, layer_names):
+
         #overlay prediciton on current image
-        self.radiograph_view.clear_layers();
-        self.segments_list.clear();
+        if self.predict_on_unlabeled_choice == 0:
+            self.radiograph_view.clear_layers();
+            self.segments_list.clear();
+
         # #Add an item to segmentation list for each layer predicted
+        count_before = self.radiograph_view.layer_count;
         for l in range(len(layers)):
             item = QListWidgetItem();
             item.setCheckState(QtCore.Qt.Checked)
@@ -1442,7 +1448,7 @@ class MainWindow(QMainWindow):
 
             mask = pixmap.createMaskFromColor(QtGui.QColor(0,0,0),Qt.MaskMode.MaskInColor);
             pixmap.setMask(mask);
-            self.radiograph_view.set_layer_pixmap(l,pixmap);
+            self.radiograph_view.set_layer_pixmap(l + count_before,pixmap);
         
         self.busy_indicator_window.hide();
 
@@ -1662,7 +1668,6 @@ if __name__=='__main__':
     
     if not ret:
         #No project found so show project name dialoge.
-       
         new_project_window.show_window();
         pass
 
