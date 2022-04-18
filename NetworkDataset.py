@@ -287,7 +287,7 @@ class NetworkDataset(Dataset):
         radiograph_image_path = self.radiographs[index];
         
         radiograph_image = cv2.imread(radiograph_image_path,cv2.IMREAD_GRAYSCALE);
-        clahe = cv2.createCLAHE(7,(11,11));
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
         radiograph_image = clahe.apply(radiograph_image);
         radiograph_image = np.expand_dims(radiograph_image, axis=2);
         radiograph_image = np.repeat(radiograph_image, 3,axis=2);

@@ -637,10 +637,8 @@ class MainWindow(QMainWindow):
         self.exposure_combo_box = QComboBox(self);
         self.exposure_combo_box.addItem("Normal");
         self.exposure_combo_box.addItem("Underexposed-mild");
-        self.exposure_combo_box.addItem("Underexposed-moderate");
         self.exposure_combo_box.addItem("Underexposed-marked");
         self.exposure_combo_box.addItem("Overexposed-mild");
-        self.exposure_combo_box.addItem("Overexposed-moderate");
         self.exposure_combo_box.addItem("Overexposed-marked");
         self.box_quality_labels_grid.addWidget(self.exposure_combo_box, 1, 1, 1, 1);
 
@@ -1321,19 +1319,19 @@ class MainWindow(QMainWindow):
             self.get_next_unlabeled();
     
     def submit_label_clicked(self):
-        if self.radiograph_view.layer_count != 0:
-            msgBox = QMessageBox()
-            msgBox.setIcon(QMessageBox.Icon.Warning)
-            msgBox.setText("Do you want to submit the label?")
-            msgBox.setWindowTitle("Submit Label Confirmation")
-            msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            #msgBox.buttonClicked.connect(msgButtonClick)
+        #if self.radiograph_view.layer_count != 0:
+        msgBox = QMessageBox()
+        msgBox.setIcon(QMessageBox.Icon.Warning)
+        msgBox.setText("Do you want to submit the label?")
+        msgBox.setWindowTitle("Submit Label Confirmation")
+        msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        #msgBox.buttonClicked.connect(msgButtonClick)
 
-            return_value = msgBox.exec()
-            if return_value == QMessageBox.Yes:
-                self.submit_label();
-        else:
-            show_dialoge(QMessageBox.Icon.Critical, "No layer found, image should have at least one layer to submit.", "No layers found", QMessageBox.Ok);
+        return_value = msgBox.exec()
+        if return_value == QMessageBox.Yes:
+            self.submit_label();
+        #else:
+        #    show_dialoge(QMessageBox.Icon.Critical, "No layer found, image should have at least one layer to submit.", "No layers found", QMessageBox.Ok);
         pass
         
     def paint_clicked(self):

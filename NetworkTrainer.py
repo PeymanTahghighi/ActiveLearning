@@ -45,7 +45,7 @@ from ignite.contrib.handlers.tensorboard_logger import *
 import Config
 import logging
 from torchmetrics import *
-import ptvsd
+#import ptvsd
 from StoppingStrategy import *
 from Loss import dice_loss, focal_loss, tversky_loss
 
@@ -336,7 +336,7 @@ class NetworkTrainer(QObject):
             self.model.eval();
             with torch.no_grad():
                 radiograph_image = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'images', lbl]),cv2.IMREAD_GRAYSCALE);
-                clahe = cv2.createCLAHE(7,(11,11));
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8));
                 radiograph_image = clahe.apply(radiograph_image);
                 radiograph_image = np.expand_dims(radiograph_image, axis=2);
                 radiograph_image = np.repeat(radiograph_image, 3,axis=2);
