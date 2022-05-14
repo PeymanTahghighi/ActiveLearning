@@ -158,6 +158,7 @@ class OfflineAugmentation():
         for i in range(len(radiographs)):
             #load both radiograph and mask
             radiograph_image = cv2.imread(radiographs[i],cv2.IMREAD_UNCHANGED);
+            #print(radiographs[i]);
             mask_image = np.zeros(shape = (radiograph_image.shape[0],
              radiograph_image.shape[1], num_classes), dtype=np.uint8);
 

@@ -959,6 +959,7 @@ class MainWindow(QMainWindow):
         self.all_radiographs_list.clear();
         #Update the list of available already labeled radiographs
         dl = Class.data_pool_handler.data_list;
+        dl = dict(sorted(dl.items(), key=lambda item: item[0]))
         for r in dl.keys():
             if dl[r][0] == 'labeled':
                 list_item_meta = LabelledRadListItem();
@@ -1109,7 +1110,6 @@ class MainWindow(QMainWindow):
 
         return_value = msgBox.exec()
 
-        #We first just try to load the mode. If the loading is successful, we start the prediction.
         if return_value == QMessageBox.Yes:
             Class.data_pool_handler.delete_radiograph(txt);
             self.update_all_radiographs_segments_list();
@@ -1369,7 +1369,7 @@ class MainWindow(QMainWindow):
         self.fill_button.setStyleSheet("background-color: white");
         self.erase_button.setStyleSheet("background-color: white");
         self.paint_button.setStyleSheet("background-color: white");
-        self.magnetic_scissor_button.setStyleSheet("background-color: Aquamarine");
+        self.magnetic_scissor_button.setStyleSheet("background-color: Aq uamarine");
         self.radiograph_view.set_state(LayerItem.MagneticLasso);
 
     def update_model_clicked(self):
@@ -1406,7 +1406,7 @@ class MainWindow(QMainWindow):
         #self.th.start();
         pass
     
-    def predict_clicked(self):
+    def predict_clicked(self): 
         self.predict_on_unlabeled();
     
     def model_loaded_finished_slot(self, b):

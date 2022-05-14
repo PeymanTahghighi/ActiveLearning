@@ -105,7 +105,7 @@ class NetworkTrainer(QObject):
 
         train_radiograph, train_masks, valid_radiographs, valid_masks = \
         self.train_valid_split.get(os.path.sep.join([Config.PROJECT_ROOT,'images']), 
-            os.path.sep.join([Config.PROJECT_ROOT,'labels']),0.2, layer_names);
+            os.path.sep.join([Config.PROJECT_ROOT,'labels']),0.1, layer_names);
         train_radiograph, train_masks, layer_weight = self.offline_augmentation.initialize_augmentation(train_radiograph, train_masks, layer_names);
 
         self.train_dataset = NetworkDataset(train_radiograph, train_masks, Config.train_transforms, train = True);
@@ -133,7 +133,7 @@ class NetworkTrainer(QObject):
         weight_tensor = torch.tensor(weight_tensor,dtype=torch.float32);
         self.bce = nn.BCEWithLogitsLoss().to(Config.DEVICE);
 
-        self.stopping_strategy = CombinedTrainValid(2,5);
+        self.stopping_strategy = CombinedTrainValid(1,5);
 
         self.model.reset_weights();
 

@@ -48,7 +48,7 @@ def focal_loss(logits,
 #===============================================================
 def tversky_loss(logits,
                 true,
-                alpha = 0.5,
+                alpha = 2.0,
                 beta = 1.0,
                 sigmoid = False,
                 arange_logits = False,
