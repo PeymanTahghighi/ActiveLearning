@@ -3,6 +3,7 @@
 from genericpath import isdir, isfile
 import os
 from posixpath import basename
+import shutil
 from typing import Dict
 from PyQt5 import QtWidgets
 from PyQt5 import QtCore
@@ -158,7 +159,7 @@ class DataPoolHandler(QObject):
         #This is indeed useful in first step when we haven't trained any models 
         #yet or in situation that we lost the model.
         #TODO implement badge gradient sampling
-        m, sts = Class.network_trainer.get_model();
+        #m, sts = Class.network_trainer.get_model();
 
         # if sts is True:
         #     idx = self.__get_data_badge_strategy(unlabeled, m);
@@ -176,6 +177,7 @@ class DataPoolHandler(QObject):
     
     def delete_radiograph(self, txt):
         self.__data_list.pop(txt);
+        os.remove(os.path.sep.join([Config.PROJECT_ROOT, 'images', txt]));
 
     def submit_label(self,  arr, rot, exp):
         self.__data_list[self.__current_radiograph][0] = "labeled";
@@ -248,26 +250,25 @@ class DataPoolHandler(QObject):
             possess.
         """
         if(self.__is_dicom(item_path)):
-            item_name = self.__check_duplicate_name(item_name);
-            #save as a dicom image
-            self.__data_list[item_name] = ["unlabeled", "dicom"];
-            file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', item_name]);
-            copyfile(item_path, file_new_path);
-            return 1;
+            if item_name not in self.__data_list.keys():
+                #save as a dicom image
+                self.__data_list[item_name] = ["unlabeled", "dicom"];
+                file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', item_name]);
+                copyfile(item_path, file_new_path);
+                return 1;
         elif(self.__is_image(item_path)):
-            item_name = self.__check_duplicate_name(item_name);
-            #save as a dicom image
-            self.__data_list[item_name] = ["unlabeled", "image"];
-            file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', item_name]);
-            copyfile(item_path, file_new_path);
-            return 1;
+            if item_name not in self.__data_list.keys():
+                self.__data_list[item_name] = ["unlabeled", "image"];
+                file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', item_name]);
+                copyfile(item_path, file_new_path);
+                return 1;
         
         return 0;
 
     def __check_duplicate_name(self, name):
         """
             This function checks for duplicate file names and add 
-            indices like "_#_ which # is a number to the end of
+            indices like _#_ which # is a number to the end of
             the given file name
         """
         if name in self.__data_list.keys():
@@ -340,8 +341,11 @@ class DataPoolHandler(QObject):
     def __load_file_paths(self, paths):
         cnt = 0;
         for p in paths:
-            item_name = self.__check_duplicate_name(os.path.basename(p));
-            cnt += self.__add_image_to_database(p, item_name);
+            #ignore duplicate names
+            if os.path.basename(p) not in self.__data_list.keys():
+                item_name = os.path.basename(p);
+                #item_name = self.__check_duplicate_name(os.path.basename(p));
+                cnt += self.__add_image_to_database(p, item_name);
         return cnt;
     def __get_data_badge_strategy(self, unlabeled, model):
         X = [];

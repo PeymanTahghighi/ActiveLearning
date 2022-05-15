@@ -5,6 +5,8 @@ from shutil import copy
 import torch
 import torch.nn as nn
 from torchvision import models
+
+from Config import DEVICE
 #===============================================================
 #===============================================================
 
@@ -65,7 +67,7 @@ class Upblock(nn.Module):
 
 #---------------------------------------------------------------
 class Unet(nn.Module):
-    def __init__(self, num_classes) -> None:
+    def __init__(self, num_classes = None) -> None:
         super().__init__();
         resnet = models.resnet50(pretrained= True);
         self.input_blocks = nn.Sequential(*list(resnet.children()))[:3];
@@ -87,15 +89,22 @@ class Unet(nn.Module):
         self.up_3 = Upblock(512,256);
         self.up_4 = Upblock(256, 128, 128+64)
         self.up_5 = Upblock(128, 64, 64+3);
-        self.final = nn.Conv2d(64, num_classes, kernel_size=1, stride=1, padding=0);
-
-        self.state_dict_copy = self.state_dict();
+        
+        if num_classes != None:
+            self.final = nn.Conv2d(64, num_classes, kernel_size=1, stride=1, padding=0);
+        
+        self.state_dict_copy = deepcopy(self.state_dict());
 
         #for one time only we have to calculate the number of weight parameters we have
         self.__weight_parameters = 0;
         for name, W in self.named_parameters():
             if 'weight' in name:
                 self.__weight_parameters+=1;
+    
+    def set_num_classes(self, n):
+        self.final = nn.Conv2d(64, n, kernel_size=1, stride=1, padding=0).to(DEVICE);
+        #update state dict
+        self.state_dict_copy = deepcopy(self.state_dict());
     
     def forward(self, inp):
         d_1 = self.input_blocks(inp);

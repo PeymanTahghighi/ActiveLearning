@@ -47,6 +47,7 @@ import logging
 from torchmetrics import *
 #import ptvsd
 from StoppingStrategy import *
+from Loss import dice_loss, focal_loss, tversky_loss
 
 
 class NetworkTrainer(QObject):
@@ -68,16 +69,8 @@ class NetworkTrainer(QObject):
 
     #This function should be called once the program starts
     def __initialize(self,):
-        self.disc_list = [];
 
-        self.model = Unet(num_classes=3).to(Config.DEVICE);
-        self.optimizer = optim.RMSprop(self.model.parameters(), lr=Config.LEARNING_RATE, weight_decay=1e-4);
-
-        self.precision_estimator = Precision(num_classes=3, average='macro').to(Config.DEVICE);
-        self.recall_estimator = Recall(num_classes=3, average='macro').to(Config.DEVICE);
-        self.accuracy_esimator = Accuracy(num_classes=3,average='macro').to(Config.DEVICE);
-        self.f1_esimator = F1(num_classes=3, average='macro').to(Config.DEVICE);
-
+        self.model = Unet().to(Config.DEVICE);
         self.l1_loss = nn.L1Loss().to(Config.DEVICE);
 
         self.scaler = torch.cuda.amp.grad_scaler.GradScaler()
@@ -97,12 +90,22 @@ class NetworkTrainer(QObject):
         #set model_load_satus to false so next time we are going to use the model
         #we are forced to load the newly trained model
         self.__model_load_status = False;
+        
+        num_classes = len(layer_names);
+        self.model.set_num_classes(num_classes);
+
+        self.optimizer = optim.RMSprop(self.model.parameters(), lr=Config.LEARNING_RATE, weight_decay=1e-4);
+
+        self.precision_estimator = Precision(num_classes=1).to(Config.DEVICE);
+        self.recall_estimator = Recall(num_classes=1).to(Config.DEVICE);
+        self.accuracy_esimator = Accuracy(num_classes=1).to(Config.DEVICE);
+        self.f1_esimator = F1(num_classes=1).to(Config.DEVICE);
 
         self.writer = SummaryWriter(os.path.sep.join([Config.PROJECT_ROOT,'experiments']));
 
         train_radiograph, train_masks, valid_radiographs, valid_masks = \
         self.train_valid_split.get(os.path.sep.join([Config.PROJECT_ROOT,'images']), 
-            os.path.sep.join([Config.PROJECT_ROOT,'labels']),0.2, layer_names);
+            os.path.sep.join([Config.PROJECT_ROOT,'labels']),0.1, layer_names);
         train_radiograph, train_masks, layer_weight = self.offline_augmentation.initialize_augmentation(train_radiograph, train_masks, layer_names);
 
         self.train_dataset = NetworkDataset(train_radiograph, train_masks, Config.train_transforms, train = True);
@@ -117,19 +120,20 @@ class NetworkTrainer(QObject):
         #self.gen.set_num_classes(Config.NUM_CLASSES);
 
         #set weight tensor by calculating each class distribution
-        total = np.sum(layer_weight);
-        for i in range(len(layer_weight)):
-            layer_weight[i] = total / layer_weight[i];
+        # total = np.sum(layer_weight);
+        # for i in range(len(layer_weight)):
+        #     layer_weight[i] = total / layer_weight[i];
+        weight_tensor = np.zeros((Config.NUM_CLASSES), dtype=np.float32);
+        for n in range(Config.NUM_CLASSES):
+
+            weight_tensor[n] = (layer_weight[n][1] / layer_weight[n][0]);
 
         #Normalize to have numbers between 0 and 1
-        layer_weight = layer_weight / np.sqrt(np.sum(layer_weight **2));
-        self.weight_tensor = torch.tensor(layer_weight,dtype=torch.float32);
-        if Config.NUM_CLASSES > 2:
-            self.bce = nn.CrossEntropyLoss().to(Config.DEVICE);
-        else:
-            self.ce = nn.BCELoss().to(Config.DEVICE);
-        
-        self.stopping_strategy = CombinedTrainValid(2,5);
+        #layer_weight = layer_weight / np.sqrt(np.sum(layer_weight **2));
+        weight_tensor = torch.tensor(weight_tensor,dtype=torch.float32);
+        self.bce = nn.BCEWithLogitsLoss().to(Config.DEVICE);
+
+        self.stopping_strategy = CombinedTrainValid(1,5);
 
         self.model.reset_weights();
 
@@ -141,63 +145,27 @@ class NetworkTrainer(QObject):
         #It describes number of classes and each layer's name
         pickle.dump([Config.NUM_CLASSES, layer_names], open(os.path.sep.join([Config.PROJECT_ROOT,'ckpts','train.meta']),'wb'));
     
-    def dice_loss(self, pred, mask, eps=1e-7):
-        """Computes the Sørensen–Dice loss.
-        Note that PyTorch optimizers minimize a loss. In this
-        case, we would like to maximize the dice loss so we
-        return the negated dice loss.
-        Args:
-            true: a tensor of shape [B, 1, H, W].
-            logits: a tensor of shape [B, C, H, W]. Corresponds to
-                the raw output or logits of the model.
-            eps: added to the denominator for numerical stability.
-        Returns:
-            dice_loss: the Sørensen–Dice loss.
-        """
-        #num_classes = pred.shape[1]
-        if Config.NUM_CLASSES == 2:
-            mask = mask.permute(0,2,3,1).long();
-            pred = pred.permute(0,2,3,1).long();
-        else:
-            mask = mask.permute(0,2,3,1).long();
-            pred = pred.permute(0,2,3,1).long();
+    
+    def __loss_func(self, output, gt):
+        total_loss = 0;
+        # for i in range(Config.NUM_CLASSES):
+        #     curr_out = output[:,:,:,i];
+        #     curr_gt = gt[:,:,:,i];
 
-            mask = torch.nn.functional.one_hot(mask, num_classes = Config.NUM_CLASSES).squeeze(dim = 3);
-            pred = torch.nn.functional.one_hot(pred, num_classes = Config.NUM_CLASSES).squeeze(dim = 3);
+        #     # curr_gt_np = curr_gt[0].detach().cpu().numpy();
+        #     # cv2.imshow("t", curr_gt_np);
+        #     # cv2.waitKey();
 
-            #probas = F.softmax(logits, dim=1)
-        #true_1_hot = true_1_hot.type(logits.type())
-        dims = tuple(range(1, mask.ndimension()))
-        intersection = torch.sum(mask * pred, dims);
-        cardinality = torch.sum(mask + pred, dims)
-        dice_loss = (2. * intersection / (cardinality + eps)).mean()
-        return (1 - dice_loss)
+        #output = torch.sigmoid(output);
+        #output = torch.where(output > 0.5, 1.0, 0.0);
+        f_loss = focal_loss(output, gt,  arange_logits=True);
+        t_loss = tversky_loss(output, gt, sigmoid=True, arange_logits=True)
+        #bce_loss = self.bce(output.permute(0,2,3,1), gt.float());
+            #total_loss += bce_loss;
+        
+        return  t_loss + f_loss;
+        
 
-    def __loss_func_gen(self, pred_mask, pred_mask_thresh, gt_mask, d_real_list, d_fake_list, ce):
-        logging.info("Inside loss function");
-        loss_l1 = 0;
-        for i in range(len(d_fake_list)):
-            loss_l1 += self.weight_tensor[i] * torch.mean(torch.abs(d_fake_list[i] - d_real_list[i]));
-        
-        loss_l1 /= len(d_fake_list);
-        
-        loss_dice = self.dice_loss(pred_mask_thresh, gt_mask.long());
-        
-        #loss_bce = bce(pred_mask, gt_mask.float());
-        # gt_mask = gt_mask.long();
-        # prednp = pred_mask.cpu().detach().numpy();
-        # gtnp = gt_mask.cpu().detach().numpy();
-        # loss_pos_np = -1*np.mean(gtnp * np.log(prednp + Config.EPSILON));
-        # loss_neg_np = -1*np.mean((1-gtnp) * np.log((1-prednp+ Config.EPSILON)));
-        
-        if Config.NUM_CLASSES > 2:
-            loss_seg = ce(pred_mask, gt_mask.squeeze(dim=1).long());
-        else:
-            loss_pos = -1*torch.mean(gt_mask*torch.log(pred_mask + Config.EPSILON))  * self.weight_tensor[1];
-            loss_neg = -1*torch.mean((1-gt_mask)*torch.log(1-pred_mask + Config.EPSILON)) * self.weight_tensor[0];
-            loss_seg = loss_pos + loss_neg;
-
-        return 10.0*loss_seg + 10.0*loss_dice + 10.0*loss_l1;
 
     def __train_one_epoch(self, loader, model, optimizer):
 
@@ -206,24 +174,38 @@ class NetworkTrainer(QObject):
         update_step = 1;
         with tqdm(loader, unit="batch") as batch_data:
             for radiograph, mask, _ in batch_data:
-                radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE)
-                # radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE);
-                # radiograph_np = radiograph.permute(0,2,3,1).cpu().detach().numpy();
-                #mask_np = mask.permute(0,2,3,1).cpu().detach().numpy();
+                radiograph, mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE)
+                mask.require_grad = True;
+                radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE);
+                radiograph_np = radiograph.permute(0,2,3,1).cpu().detach().numpy();
+                radiograph_np = radiograph_np[0][:,:,1];
+                radiograph_np *= 0.229;
+                radiograph_np += 0.485;
+                radiograph_np *= 255;
+                
+                #cv2.imshow('radiograph', radiograph_np.astype("uint8"));
+                #cv2.waitKey();
+                # mask_np = mask.cpu().detach().numpy();
+                # mask_np = mask_np[0];
+                
                 # radiograph_np = radiograph_np*0.5+0.5;
                 # plt.figure();
                 # plt.imshow(radiograph_np[0]);
                 # plt.waitforbuttonpress();
 
+                # cv2.imshow('mask', mask_np.astype("uint8")*255);
+                # cv2.waitKey();
+
                 # plt.figure();
                 # plt.imshow(mask[0]*255);
                 # plt.waitforbuttonpress();
-                
+                 
 
                 with torch.cuda.amp.autocast_mode.autocast():
                     pred,_ = model(radiograph);
-                    loss_ce = self.bce(pred,mask.squeeze(dim=1).long());
-                    loss = loss_ce;
+                    #sigmoid = nn.Sigmoid();
+                    #pred = sigmoid(pred).permute(0,2,3,1);
+                    loss = self.__loss_func(pred, mask);
 
                 self.scaler.scale(loss).backward();
                 epoch_loss += loss.item();
@@ -247,7 +229,7 @@ class NetworkTrainer(QObject):
                     radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE);
 
                     pred,_ = model(radiograph);
-                    loss = self.bce(pred,mask.squeeze(dim=1).long());
+                    loss = self.__loss_func(pred, mask);
 
                     epoch_loss += loss.item();
                     
@@ -260,12 +242,14 @@ class NetworkTrainer(QObject):
                         total_mask = torch.cat([total_mask, mask], dim=0);
 
                     count += 1;
-        total_pred_lbl =  torch.argmax(torch.softmax(total_pred,dim=1),dim=1);
+
+        total_pred_lbl = (torch.sigmoid(total_pred)).permute(0,2,3,1);
         total_mask = total_mask;
-        prec = self.precision_estimator(total_pred_lbl.flatten(), total_mask.flatten().long());
-        rec = self.recall_estimator(total_pred_lbl.flatten(), total_mask.flatten().long());
-        acc = self.accuracy_esimator(total_pred_lbl.flatten(), total_mask.flatten().long());
-        f1 = self.f1_esimator(total_pred_lbl.flatten(), total_mask.flatten().long());
+        prec = self.precision_estimator(total_pred_lbl.flatten(), total_mask.flatten());
+        rec = self.recall_estimator(total_pred_lbl.flatten(), total_mask.flatten());
+        acc = self.accuracy_esimator(total_pred_lbl.flatten(), total_mask.flatten());
+        f1 = self.f1_esimator(total_pred_lbl.flatten(), total_mask.flatten());
+
         return epoch_loss / count, acc, prec, rec, f1;
 
 
@@ -314,19 +298,20 @@ class NetworkTrainer(QObject):
             e += 1;
 
     def __load_model(self):
+        
         lstdir = glob(os.path.sep.join([Config.PROJECT_ROOT,'ckpts']) + '/*');
         #Find checkpoint file based on extension
         found = False;
         for c in lstdir:
             file_name, ext = os.path.splitext(c);
             if ext == '.pt':
-                found = True;
                 #Load train meta to read layer names and number of classes
                 self.train_meta = pickle.load(open(os.path.sep.join([Config.PROJECT_ROOT,'ckpts', 'train.meta']),'rb'));
                 Config.NUM_CLASSES = self.train_meta[0];
-                #self.gen.set_num_classes(Config.NUM_CLASSES);
+                self.model.set_num_classes(Config.NUM_CLASSES);
                 load_checkpoint(c, self.model);
                 #self.model.load_state_dict(checkpoint["state_dict"])
+                found = True;
         self.__model_load_status = found;
         return found;
     
@@ -345,12 +330,13 @@ class NetworkTrainer(QObject):
         #Because predicting is totally based on the initialization of the model,
         # if we haven't loaded a model yet or the loading wasn't successfull
         # we should not do anything and return immediately.
+
+        #ptvsd.debug_this_thread();
         if self.__model_load_status:
             self.model.eval();
             with torch.no_grad():
                 radiograph_image = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'images', lbl]),cv2.IMREAD_GRAYSCALE);
-                #radiograph_image = cv2.imread(radiograph_image_path,cv2.IMREAD_GRAYSCALE);
-                clahe = cv2.createCLAHE(7,(11,11));
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8));
                 radiograph_image = clahe.apply(radiograph_image);
                 radiograph_image = np.expand_dims(radiograph_image, axis=2);
                 radiograph_image = np.repeat(radiograph_image, 3,axis=2);
@@ -363,25 +349,29 @@ class NetworkTrainer(QObject):
                 #radiograph_image = radiograph_image.to(Config.DEVICE);
                 p,_ = self.model(radiograph_image.unsqueeze(dim=0));
                 mask_list = [];
-                if Config.NUM_CLASSES > 2:
-                    num_classes = p.size()[1];
-                    p = p.permute(0,2,3,1).cpu().detach().numpy()[0];
-                    p = np.argmax(p, axis=2);
-                    
-                    #Convert each class to a predefined color
-                    for i in range(1,num_classes):
-                        mask = np.zeros(shape=(Config.IMAGE_SIZE, Config.IMAGE_SIZE, 3),dtype=np.uint8);
-                        tmp = (p==i);
-                        mask[(tmp)] = Config.PREDEFINED_COLORS[i-1];
-                        mask = cv2.resize(mask,(h,w), interpolation=cv2.INTER_NEAREST);
-                        mask_list.append(mask);
-                else:
-                    p = (p > 0.5).long();
-                    p = p.permute(0,2,3,1).cpu().detach().numpy()[0];
+
+                p = torch.sigmoid(p);
+                num_classes = p.size()[1];
+                p = p.permute(0,2,3,1).cpu().detach().numpy()[0];
+                #threshold to get the label
+                p = p > 0.5;
+                
+                #Convert each class to a predefined color
+                for i in range(num_classes):
                     mask = np.zeros(shape=(Config.IMAGE_SIZE, Config.IMAGE_SIZE, 3),dtype=np.uint8);
-                    tmp = (p==1).squeeze();
-                    a = PIL.ImageColor.getrgb(Config.PREDEFINED_COLORS[0]);
-                    mask[(tmp)] = PIL.ImageColor.getrgb(Config.PREDEFINED_COLORS[0]);
+                    mask_for_class = p[:,:,i];
+                    tmp = (mask_for_class==1);
+                    mask[(tmp)] = Config.PREDEFINED_COLORS[i];
                     mask = cv2.resize(mask,(h,w), interpolation=cv2.INTER_NEAREST);
                     mask_list.append(mask);
+                # else:
+                #     p = torch.sigmoid(p);
+                #     p = (p > 0.5).long();
+                #     p = p.permute(0,2,3,1).cpu().detach().numpy()[0];
+                #     mask = np.zeros(shape=(Config.IMAGE_SIZE, Config.IMAGE_SIZE, 3),dtype=np.uint8);
+                #     tmp = (p==1).squeeze();
+                #     a = PIL.ImageColor.getrgb(Config.PREDEFINED_COLORS[0]);
+                #     mask[(tmp)] = PIL.ImageColor.getrgb(Config.PREDEFINED_COLORS[0]);
+                #     mask = cv2.resize(mask,(h,w), interpolation=cv2.INTER_NEAREST);
+                #     mask_list.append(mask);
                 self.predict_finished_signal.emit(mask_list, self.train_meta[1]);

@@ -179,6 +179,10 @@ class ProjectHandler(QObject):
 
                 data_list = pickle.load(open(project_path,'rb'));
 
+                #tmp_datalist = self.__relod_dataset();
+                #data_list = tmp_datalist;
+
+
                 tmp_datalist, change = self.__check_for_unload_images(data_list);
 
                 if change is True:
@@ -250,11 +254,40 @@ class ProjectHandler(QObject):
             if (not file_name in data_list and os.path.exists(path_to_meta)):
                 temp_data_list[file_name] = ['labeled', 'image'];
                 change = True;
-            elif (data_list[file_name][0] == 'unlabeled' and os.path.exists(path_to_meta)):
+            elif (file_name in data_list and data_list[file_name][0] == 'unlabeled' and os.path.exists(path_to_meta)):
                 temp_data_list[file_name][0] = 'labeled';
                 change = True;
-        
 
         return temp_data_list, change;
-        
+    
+    def __relod_dataset(self):
+        '''
+            Here we match every image with labels that are availabe.
+            We also match each label in meta file and correct any naming issues.
+        '''
+
+        temp_data_list = dict();
+
+        img_lst = glob(os.path.sep.join([Config.PROJECT_ROOT, "images"]) + "\\*");
+
+        for l in img_lst:
+            file_name = os.path.basename(l);
+            
+            file_name_we = file_name[:file_name.rfind(".")];
+
+            path_to_meta = os.path.sep.join([Config.PROJECT_ROOT, 'labels', file_name_we + ".meta"]);
+            if (os.path.exists(path_to_meta) is False):
+                print(f"Could not find meta in reload dataset: {path_to_meta}");
+            else:
+                temp_data_list[file_name] = ['labeled', 'image'];
+                meta_data = pickle.load(open(path_to_meta, 'rb'));
+                for k in meta_data.keys():
+                    if k != 'rot' and k!= 'exp':
+                        d = meta_data[k];
+                        name = d[2];
+                        tmp_name = name[len(name)-6:];
+                        new_name = file_name_we+tmp_name;
+                        meta_data[k][2] = new_name;
+                pickle.dump(meta_data, open(path_to_meta, 'wb'));
+        return temp_data_list;
 
