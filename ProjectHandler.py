@@ -179,6 +179,8 @@ class ProjectHandler(QObject):
 
                 data_list = pickle.load(open(project_path,'rb'));
 
+                
+
                 #tmp_datalist = self.__relod_dataset();
                 #data_list = tmp_datalist;
 
@@ -245,13 +247,13 @@ class ProjectHandler(QObject):
 
         temp_data_list = deepcopy(data_list);
 
-        lbl_lst = glob(os.path.sep.join([Config.PROJECT_ROOT, "images"]) + "\\*");
+        img_lst = glob(os.path.sep.join([Config.PROJECT_ROOT, "images"]) + "\\*");
 
         change = False;
-        for l in lbl_lst:
+        for l in img_lst:
             file_name = os.path.basename(l);
             path_to_meta = os.path.sep.join([Config.PROJECT_ROOT, 'labels', file_name[:file_name.rfind(".")] + ".meta"]);
-            if (not file_name in data_list and os.path.exists(path_to_meta)):
+            if (file_name not in data_list and os.path.exists(path_to_meta)):
                 temp_data_list[file_name] = ['labeled', 'image'];
                 change = True;
             elif (file_name in data_list and data_list[file_name][0] == 'unlabeled' and os.path.exists(path_to_meta)):
