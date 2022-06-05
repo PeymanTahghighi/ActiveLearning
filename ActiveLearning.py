@@ -9,7 +9,6 @@ from PIL import ImageColor
 from PyQt5.QtCore import QThread, Qt
 from PyQt5.QtWidgets import QSizePolicy, QApplication, QCheckBox, QColorDialog, QComboBox, QDesktopWidget, QGridLayout, QGroupBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QProgressBar, QPushButton, QRadioButton, QScrollArea, QSlider, QFileDialog, QDialog, QStatusBar, QTabBar, QTabWidget, QTextEdit, QVBoxLayout
 import sys
-from torch.nn.functional import one_hot
 from PyQt5 import QtGui
 from PyQt5 import QtWidgets
 import Config
@@ -504,7 +503,6 @@ class MainWindow(QMainWindow):
         self.background_gc_selected = False;
         self.foreground_gc_selected = True;
         self.erase_gc_selected = False;
-        self.predict_on_unlabeled_choice = 0;
         #---------------------------------------------------------------
 
         self.th = QThread();
@@ -637,8 +635,10 @@ class MainWindow(QMainWindow):
         self.exposure_combo_box = QComboBox(self);
         self.exposure_combo_box.addItem("Normal");
         self.exposure_combo_box.addItem("Underexposed-mild");
+        self.exposure_combo_box.addItem("Underexposed-moderate");
         self.exposure_combo_box.addItem("Underexposed-marked");
         self.exposure_combo_box.addItem("Overexposed-mild");
+        self.exposure_combo_box.addItem("Overexposed-moderate");
         self.exposure_combo_box.addItem("Overexposed-marked");
         self.box_quality_labels_grid.addWidget(self.exposure_combo_box, 1, 1, 1, 1);
 
@@ -933,16 +933,15 @@ class MainWindow(QMainWindow):
         if self.radiograph_view.layer_count != 0:
             msgBox = QMessageBox()
             msgBox.setIcon(QMessageBox.Icon.Warning)
-            msgBox.setText("Do you want your new prediction to append to layers you already have? If you select no, all already drawn layers will be deleted.")
+            msgBox.setText("If you continue this operation, all already drawn layers will be deleted and you already have layers that are not submitted. Do you want to continue? If you continue, you won't be able to undo.")
             msgBox.setWindowTitle("Prediction Confirmation")
-            msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel)
+            msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
             #msgBox.buttonClicked.connect(msgButtonClick)
 
             return_value = msgBox.exec()
 
             #We first just try to load the mode. If the loading is successful, we start the prediction.
-            if return_value == QMessageBox.Yes or return_value == QMessageBox.No:
-                self.predict_on_unlabeled_choice = 1 if return_value == QMessageBox.Yes else 0;
+            if return_value == QMessageBox.Yes:
                 self.busy_indicator_window.show();
                 self.load_model_signal.emit();
         else:
@@ -959,7 +958,6 @@ class MainWindow(QMainWindow):
         self.all_radiographs_list.clear();
         #Update the list of available already labeled radiographs
         dl = Class.data_pool_handler.data_list;
-        dl = dict(sorted(dl.items(), key=lambda item: item[0]))
         for r in dl.keys():
             if dl[r][0] == 'labeled':
                 list_item_meta = LabelledRadListItem();
@@ -1110,6 +1108,7 @@ class MainWindow(QMainWindow):
 
         return_value = msgBox.exec()
 
+        #We first just try to load the mode. If the loading is successful, we start the prediction.
         if return_value == QMessageBox.Yes:
             Class.data_pool_handler.delete_radiograph(txt);
             self.update_all_radiographs_segments_list();
@@ -1319,19 +1318,19 @@ class MainWindow(QMainWindow):
             self.get_next_unlabeled();
     
     def submit_label_clicked(self):
-        #if self.radiograph_view.layer_count != 0:
-        msgBox = QMessageBox()
-        msgBox.setIcon(QMessageBox.Icon.Warning)
-        msgBox.setText("Do you want to submit the label?")
-        msgBox.setWindowTitle("Submit Label Confirmation")
-        msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        #msgBox.buttonClicked.connect(msgButtonClick)
+        if self.radiograph_view.layer_count != 0:
+            msgBox = QMessageBox()
+            msgBox.setIcon(QMessageBox.Icon.Warning)
+            msgBox.setText("Do you want to submit the label?")
+            msgBox.setWindowTitle("Submit Label Confirmation")
+            msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+            #msgBox.buttonClicked.connect(msgButtonClick)
 
-        return_value = msgBox.exec()
-        if return_value == QMessageBox.Yes:
-            self.submit_label();
-        #else:
-        #    show_dialoge(QMessageBox.Icon.Critical, "No layer found, image should have at least one layer to submit.", "No layers found", QMessageBox.Ok);
+            return_value = msgBox.exec()
+            if return_value == QMessageBox.Yes:
+                self.submit_label();
+        else:
+            show_dialoge(QMessageBox.Icon.Critical, "No layer found, image should have at least one layer to submit.", "No layers found", QMessageBox.Ok);
         pass
         
     def paint_clicked(self):
@@ -1369,11 +1368,11 @@ class MainWindow(QMainWindow):
         self.fill_button.setStyleSheet("background-color: white");
         self.erase_button.setStyleSheet("background-color: white");
         self.paint_button.setStyleSheet("background-color: white");
-        self.magnetic_scissor_button.setStyleSheet("background-color: Aq uamarine");
+        self.magnetic_scissor_button.setStyleSheet("background-color: Aquamarine");
         self.radiograph_view.set_state(LayerItem.MagneticLasso);
 
     def update_model_clicked(self):
-        #Remove all files in predictions
+        #Remove all files in predictions 
         lst = glob('predictions\\*');
         for f in lst:
             os.unlink(f);
@@ -1406,7 +1405,7 @@ class MainWindow(QMainWindow):
         #self.th.start();
         pass
     
-    def predict_clicked(self): 
+    def predict_clicked(self):
         self.predict_on_unlabeled();
     
     def model_loaded_finished_slot(self, b):
@@ -1420,14 +1419,10 @@ class MainWindow(QMainWindow):
             show_dialoge(QMessageBox.Icon.Critical, f"No model found, train first.", "No model found", QMessageBox.Ok);
 
     def predict_on_unlabeled_finished(self, layers, layer_names):
-
         #overlay prediciton on current image
-        if self.predict_on_unlabeled_choice == 0:
-            self.radiograph_view.clear_layers();
-            self.segments_list.clear();
-
+        self.radiograph_view.clear_layers();
+        self.segments_list.clear();
         # #Add an item to segmentation list for each layer predicted
-        count_before = self.radiograph_view.layer_count;
         for l in range(len(layers)):
             item = QListWidgetItem();
             item.setCheckState(QtCore.Qt.Checked)
@@ -1446,7 +1441,7 @@ class MainWindow(QMainWindow):
 
             mask = pixmap.createMaskFromColor(QtGui.QColor(0,0,0),Qt.MaskMode.MaskInColor);
             pixmap.setMask(mask);
-            self.radiograph_view.set_layer_pixmap(l + count_before,pixmap);
+            self.radiograph_view.set_layer_pixmap(l,pixmap);
         
         self.busy_indicator_window.hide();
 
@@ -1578,7 +1573,6 @@ class MainWindow(QMainWindow):
     
 if __name__=='__main__':
 
-
     torch.autograd.set_detect_anomaly(False)
     torch.autograd.profiler.profile(False)
     torch.autograd.profiler.emit_nvtx(False)
@@ -1666,6 +1660,7 @@ if __name__=='__main__':
     
     if not ret:
         #No project found so show project name dialoge.
+       
         new_project_window.show_window();
         pass
 

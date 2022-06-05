@@ -45,7 +45,7 @@ from ignite.contrib.handlers.tensorboard_logger import *
 import Config
 import logging
 from torchmetrics import *
-#import ptvsd
+import ptvsd
 from StoppingStrategy import *
 from Loss import dice_loss, focal_loss, tversky_loss
 
@@ -123,14 +123,14 @@ class NetworkTrainer(QObject):
         # total = np.sum(layer_weight);
         # for i in range(len(layer_weight)):
         #     layer_weight[i] = total / layer_weight[i];
-        weight_tensor = np.zeros((Config.NUM_CLASSES), dtype=np.float32);
-        for n in range(Config.NUM_CLASSES):
+        # weight_tensor = np.zeros((Config.NUM_CLASSES), dtype=np.float32);
+        # for n in range(Config.NUM_CLASSES):
 
-            weight_tensor[n] = (layer_weight[n][1] / layer_weight[n][0]);
+        #     weight_tensor[n] = (layer_weight[n][1] / layer_weight[n][0]);
 
-        #Normalize to have numbers between 0 and 1
-        #layer_weight = layer_weight / np.sqrt(np.sum(layer_weight **2));
-        weight_tensor = torch.tensor(weight_tensor,dtype=torch.float32);
+        # #Normalize to have numbers between 0 and 1
+        # #layer_weight = layer_weight / np.sqrt(np.sum(layer_weight **2));
+        # weight_tensor = torch.tensor(weight_tensor,dtype=torch.float32);
         self.bce = nn.BCEWithLogitsLoss().to(Config.DEVICE);
 
         self.stopping_strategy = CombinedTrainValid(1,5);
@@ -254,7 +254,7 @@ class NetworkTrainer(QObject):
 
 
     def start_train_slot(self, layers_names):
-        #ptvsd.debug_this_thread();
+        ptvsd.debug_this_thread();
         logging.info("Start training...");
         self.initialize_new_train(layers_names);
 
