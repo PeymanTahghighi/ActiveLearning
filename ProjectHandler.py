@@ -178,6 +178,12 @@ class ProjectHandler(QObject):
                 Config.PROJECT_ROOT = self.__projects_root;
 
                 data_list = pickle.load(open(project_path,'rb'));
+                # meta = pickle.load(open('C:\\PhD\\Miscellaneous\\Spine and Ribs\\labels\\303.meta', 'rb'));
+                # meta['Ribs'] = meta['Vertebra'];
+                # meta.pop('Vertebra');
+                # pickle.dump(meta, open('C:\\PhD\\Miscellaneous\\Spine and Ribs\\labels\\303.meta', 'wb'))
+                # data_list['303.jpeg']
+
 
                 
 

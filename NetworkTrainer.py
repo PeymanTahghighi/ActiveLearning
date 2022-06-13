@@ -99,7 +99,7 @@ class NetworkTrainer(QObject):
         self.precision_estimator = Precision(num_classes=1).to(Config.DEVICE);
         self.recall_estimator = Recall(num_classes=1).to(Config.DEVICE);
         self.accuracy_esimator = Accuracy(num_classes=1).to(Config.DEVICE);
-        self.f1_esimator = F1(num_classes=1).to(Config.DEVICE);
+        self.f1_esimator = F1Score(num_classes=1).to(Config.DEVICE);
 
         self.writer = SummaryWriter(os.path.sep.join([Config.PROJECT_ROOT,'experiments']));
 

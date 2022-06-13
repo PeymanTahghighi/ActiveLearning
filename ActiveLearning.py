@@ -836,14 +836,14 @@ class MainWindow(QMainWindow):
         self.clahe_slider = QSlider(Qt.Orientation.Horizontal);
         self.clahe_slider.setMinimum(0);
         self.clahe_slider.setMaximum(50);
-        self.clahe_slider.setValue(0);
+        self.clahe_slider.setValue(8);
         self.box_image_processing_layout.addWidget(self.clahe_slider, items_count, 0,1,2);
         items_count+=1;
 
         self.clip_limit_slider = QSlider(Qt.Orientation.Horizontal);
         self.clip_limit_slider.setMinimum(0);
         self.clip_limit_slider.setMaximum(50);
-        self.clip_limit_slider.setValue(0);
+        self.clip_limit_slider.setValue(2);
         self.box_image_processing_layout.addWidget(self.clip_limit_slider, items_count, 0,1,2);
         items_count+=1;
 
@@ -1577,8 +1577,7 @@ class MainWindow(QMainWindow):
     #--------------------------------------------------------------
     
 if __name__=='__main__':
-
-
+    
     torch.autograd.set_detect_anomaly(False)
     torch.autograd.profiler.profile(False)
     torch.autograd.profiler.emit_nvtx(False)
