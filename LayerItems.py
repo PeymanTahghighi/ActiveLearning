@@ -89,6 +89,7 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
         self.__magnetic_lasso_tool = cv2.segmentation_IntelligentScissorsMB();
         self.__magnetic_lasso_tool.setEdgeFeatureCannyParameters(32, 100);
         self.__magnetic_lasso_tool.setGradientMagnitudeMaxLimit(200);
+        img = cv2.resize(img, (int(img.shape[1]/2), int(img.shape[0]/2)));
         self.__magnetic_lasso_tool.applyImage(img);
         self.__magnetic_lasso_undo_list.clear();
 
@@ -131,14 +132,14 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
                     and scene_pos.y() > 0 \
                     and scene_pos.x() < self.__current_image_width \
                     and scene_pos.y() < self.__current_image_height:
-                        self.__magnetic_lasso_tool.buildMap((int(scene_pos.x()), int(scene_pos.y())));
+                        self.__magnetic_lasso_tool.buildMap((int(scene_pos.x()/2), int(scene_pos.y()/2)));
                         self.__magnetic_lasso_active = True;
                         self.__magnetic_lasso_image_state = self.m_pixmap.copy(QtCore.QRect());
                         self.__magnetic_lasso_original_image = self.m_pixmap.copy(QtCore.QRect());
                         self.__magnetic_lasso_undo_list.append([self.__magnetic_lasso_image_state.copy(QtCore.QRect()), ((int(scene_pos.x()), int(scene_pos.y())))]);
                         self.__magnetic_lasso_prev_point = (int(scene_pos.x()), int(scene_pos.y()));
                     else:
-                        self.__magnetic_lasso_tool.buildMap((int(scene_pos.x()), int(scene_pos.y())));
+                        self.__magnetic_lasso_tool.buildMap((int(scene_pos.x()/2), int(scene_pos.y()/2)));
                         self.__magnetic_lasso_undo_list.append([self.__magnetic_lasso_image_state.copy(QtCore.QRect()), self.__magnetic_lasso_prev_point]);
                         self.__magnetic_lasso_image_state = self.m_pixmap.copy(QtCore.QRect());
                         self.__magnetic_lasso_prev_point = (int(scene_pos.x()), int(scene_pos.y()));
@@ -175,10 +176,13 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
             and scene_pos.x() < self.__current_image_width \
             and scene_pos.y() < self.__current_image_height:
                 image = self.__magnetic_lasso_image_state.toImage();
-                path = self.__magnetic_lasso_tool.getContour((int(scene_pos.x()),int(scene_pos.y())));
+                path = self.__magnetic_lasso_tool.getContour((int(scene_pos.x()/2),int(scene_pos.y()/2)));
                 path = path.squeeze();
-                for p in path:
-                    image.setPixelColor(int(p[0]),int(p[1]), self.pen_color);
+                for idx in range(len(path)-1):
+                    image.setPixelColor(int(path[idx][0]*2),int(path[idx][1]*2), self.pen_color);
+                    image.setPixelColor(int((path[idx+1][0]*2)*0.5 + (path[idx][0]*2)*0.5),int((path[idx][1]*2)*0.5 + (path[idx+1][1]*2)*0.5), self.pen_color);
+                
+                image.setPixelColor(int(path[len(path)-1][0]*2),int(path[len(path)-1][1]*2), self.pen_color);
                 px = QPixmap();
                 px.convertFromImage(image);
                 self.m_pixmap = px;
