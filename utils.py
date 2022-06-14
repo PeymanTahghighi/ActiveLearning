@@ -50,7 +50,7 @@ def JSD(p,q):
     return jsd;
 
 def save_samples(model, val_loader, epoch, folder):
-    x, y, _ = next(iter(val_loader))
+    x, y = next(iter(val_loader))
     x, y = x.to(Config.DEVICE), y.to(Config.DEVICE)
     with torch.no_grad():
         output, _ = model(x)
@@ -60,7 +60,7 @@ def save_samples(model, val_loader, epoch, folder):
         for b in range(b_size):
             b_output = output[b];
 
-            output_colored = torch.zeros((Config.NUM_CLASSES, Config.IMAGE_SIZE, Config.IMAGE_SIZE, 3)).long().to(Config.DEVICE);
+            output_colored = torch.zeros((Config.NUM_CLASSES, b_output.shape[0], b_output.shape[1], 3)).long().to(Config.DEVICE);
             for i in range(Config.NUM_CLASSES):
                 col = np.full((Config.IMAGE_SIZE,Config.IMAGE_SIZE, 3), [Config.PREDEFINED_COLORS[i][0], 
                 Config.PREDEFINED_COLORS[i][1], 

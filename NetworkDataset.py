@@ -1,4 +1,5 @@
 from PyQt5 import QtCore
+from gevent import config
 from pandas.io import pickle
 from Utility import get_radiograph_label_meta
 from PIL import ImageColor, Image
@@ -25,8 +26,9 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import Config
 import logging
-
+from torch.utils.data.sampler import Sampler
 from utils import JSD
+import random
 
 class TrainValidSplit():
     def __init__(self):
@@ -106,8 +108,7 @@ class TrainValidSplit():
             selected_indices.append(selected_idx);
             train_data -= 1;
         
-                    
-
+    
         #Split datat into train and validation
         selected_radiographs = np.array(selected_radiographs);
         selected_masks = np.array(selected_masks);
@@ -147,9 +148,6 @@ class OfflineAugmentation():
             os.makedirs(os.path.sep.join([o,'Aug-Tmp']));
         
         self.clear_augmentations();
-
-        num_classes = len(layer_names);
-
         #For cost-sensitive learning
         #We should add one for the background layer
         layer_weight = np.zeros((len(layer_names),2), dtype=np.float);
@@ -159,30 +157,42 @@ class OfflineAugmentation():
             #load both radiograph and mask
             radiograph_image = cv2.imread(radiographs[i],cv2.IMREAD_UNCHANGED);
             #print(radiographs[i]);
-            mask_image = np.zeros(shape = (radiograph_image.shape[0],
-             radiograph_image.shape[1], num_classes), dtype=np.uint8);
+            
 
             #Open meta file and open relating masks
             df = pd.read_pickle(masks[i]);
-            for k in range(len(layer_names)):
-                #if the layer has been selected by user read data
-                desc = df[layer_names[k]];
-                mask_name = desc[2];
-                layer = desc[0];
-                mask_image_layer = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'labels', mask_name]),cv2.IMREAD_UNCHANGED);
-                mask_image_layer = np.sum(mask_image_layer[:,:,:3], axis=2);
-                marked_pixels = (mask_image_layer != 0);
-                #set the corresponding class to one
-                mask_image[marked_pixels == True,k] = 1;
+            if Config.MUTUAL_EXCLUSION is False:
+                mask_image = np.zeros(shape = (radiograph_image.shape[0],
+                radiograph_image.shape[1], Config.NUM_CLASSES), dtype=np.uint8);
+                for k in range(Config.NUM_CLASSES):
+                    #if the layer has been selected by user read data
+                    desc = df[layer_names[k-1]];
+                    mask_name = desc[2];
+                    layer = desc[0];
+                    mask_image_layer = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'labels', mask_name]),cv2.IMREAD_UNCHANGED);
+                    mask_image_layer = np.sum(mask_image_layer[:,:,:3], axis=2);
+                    marked_pixels = (mask_image_layer != 0);
+                    #set the corresponding class to one
+                    mask_image[marked_pixels == True,k] = 1;
 
-                layer_weight[k][0] += np.sum(marked_pixels);
-                layer_weight[k][1] += mask_image_layer.shape[0] * mask_image_layer.shape[1];
+                    layer_weight[k-1][0] += np.sum(marked_pixels);
+                    layer_weight[k-1][1] += mask_image_layer.shape[0] * mask_image_layer.shape[1];
+            else:
+                mask_image = np.zeros(shape = (radiograph_image.shape[0],
+                radiograph_image.shape[1]), dtype=np.uint8);
+                for k in range(1,Config.NUM_CLASSES):
+                    #if the layer has been selected by user read data
+                    desc = df[layer_names[k-1]];
+                    mask_name = desc[2];
+                    layer = desc[0];
+                    mask_image_layer = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'labels', mask_name]),cv2.IMREAD_UNCHANGED);
+                    mask_image_layer = np.sum(mask_image_layer[:,:,:3], axis=2);
+                    marked_pixels = (mask_image_layer != 0);
+                    #set the corresponding class to one
+                    mask_image[marked_pixels == True] = k;
 
-            # #count each layer classes in mask image and them
-            # for j in range(len(layer_weight)):
-            #     c = (mask_image == j).sum();
-            #     layer_weight[j] = layer_weight[j] + c;
-
+                    layer_weight[k-1][0] += np.sum(marked_pixels);
+                    layer_weight[k-1][1] += mask_image_layer.shape[0] * mask_image_layer.shape[1];
 
             segmap = SegmentationMapsOnImage(mask_image, shape=radiograph_image.shape);
 
@@ -298,50 +308,98 @@ class NetworkDataset(Dataset):
             transformed = self.transform(image = radiograph_image, mask = mask_image);
             radiograph_image = transformed["image"];
             mask_image = transformed['mask'];
+            
+            _,w,h = radiograph_image.shape;
+            pad_width = 32 - w%32;
+            pad_height = 32 - h%32;
+
+            padded_radiograph = torch.zeros((3, w + pad_width, h + pad_height), dtype=torch.float32);
+
+            if len(mask_image.shape) > 2:
+                msk_size = mask_image.shape[-1];
+                padded_seg = torch.zeros((w + pad_width, h + pad_height, msk_size), dtype=torch.float32);
+            else:
+                padded_seg = torch.zeros((w + pad_width, h + pad_height), dtype=torch.float32);
+
+            padded_radiograph[:, :w, :h] = radiograph_image;
+            padded_seg[:w, :h] = mask_image;
+
+
+
             #ri = radiograph_image.permute(1,2,0).cpu().detach().numpy()*255;
             #sns.distplot(ri.ravel(), label=f'Mean : {np.mean(ri)}, std: {np.std(ri)}');
             #plt.legend(loc='best');
             #plt.savefig('dist-after.png');
             #mask_image = transformed["mask"]/255;
             #mask_image = torch.unsqueeze(mask_image, 0);
-            return radiograph_image, mask_image, index;
+            return padded_radiograph, padded_seg;
 
         transformed = self.transform(image = radiograph_image);
         radiograph_image = transformed["image"];
         return radiograph_image, index;
-            
-def analyze_dataset():
-    radiograph_root = os.path.sep.join(["dataset","CXR_png"]);
-    mask_root = os.path.sep.join(["dataset","masks"]);
-
-    radiograph_list = os.listdir(radiograph_root);
-    mask_list = os.listdir(mask_root);
-
-    mask_images_names = [];
-    radiograph_images_names = [];
-
-    negative = 0;
-    positive = 0;
-    for m in radiograph_list:
-        b = m.find('MCU');
-        mask_name = m[0:m.find('.')] + "_mask.png" if b else m;
-        if mask_name in mask_list:
-            mask_images_names.append(mask_name);
-            radiograph_images_names.append(m);
-            sample_img = cv2.imread(os.path.sep.join([mask_root,mask_name]),cv2.IMREAD_GRAYSCALE);
-            w,h = sample_img.shape;
-            sample_img = sample_img.flatten();
-            sample_img = (sample_img == 255);
-            p = np.sum(sample_img);
-            n = np.sum((sample_img == 0))
-            positive += p / (704 * w*h);
-            negative += n/ (704 * w*h);
     
-    print(f"Positive portion:{positive}\tNegative portion:{negative}");
-    negative_bias = positive;
+    def image_aspect_ratio(self, index):
+        radiograph_image = cv2.imread(self.radiographs[index], cv2.IMREAD_GRAYSCALE);
+        return float(radiograph_image.shape[1]) / float(radiograph_image.shape[0])
 
 
-    pass
+class AspectRatioBasedSampler(Sampler):
 
-if __name__ == "__main__":
-    analyze_dataset();
+    def __init__(self, data_source, batch_size, drop_last):
+        self.data_source = data_source
+        self.batch_size = batch_size
+        self.drop_last = drop_last
+        self.groups = self.group_images()
+
+    def __iter__(self):
+        random.shuffle(self.groups)
+        for group in self.groups:
+            yield group
+
+    def __len__(self):
+        if self.drop_last:
+            return len(self.data_source) // self.batch_size
+        else:
+            return (len(self.data_source) + self.batch_size - 1) // self.batch_size
+
+    def group_images(self):
+        # determine the order of the images
+        order = list(range(len(self.data_source)))
+        order.sort(key=lambda x: self.data_source.image_aspect_ratio(x))
+
+        # divide into groups, one group = one batch
+        return [[order[x % len(order)] for x in range(i, i + self.batch_size)] for i in range(0, len(order), self.batch_size)]
+
+def collater(data):
+
+    imgs = [s[0] for s in data]
+    segs = [s[1] for s in data]
+        
+    widths = [int(s.shape[1]) for s in imgs]
+    heights = [int(s.shape[2]) for s in imgs]
+    batch_size = len(imgs)
+
+    max_width = np.array(widths).max()
+    max_height = np.array(heights).max()
+
+    padded_imgs = torch.zeros(batch_size, 3, max_width, max_height)
+
+    msk_size = 0;
+    if len(segs[0].shape) > 2:
+        msk_size = segs[0].shape[-1];
+        padded_segs = torch.zeros(batch_size, max_width, max_height, msk_size)
+    else:
+        padded_segs = torch.zeros(batch_size, max_width, max_height)
+
+    for i in range(batch_size):
+        img = imgs[i]
+        seg = segs[i]
+        padded_imgs[i, :,  :int(img.shape[1]), :int(img.shape[2])] = img
+
+        if msk_size == 0:
+            padded_segs[i, :int(seg.shape[0]), :int(seg.shape[1])] = seg;
+        else:
+            padded_segs[i, :int(seg.shape[0]), :int(seg.shape[1]), :] = seg;
+
+
+    return padded_imgs, padded_segs;

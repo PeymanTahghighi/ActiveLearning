@@ -17,7 +17,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import Config
-from NetworkDataset import NetworkDataset, OfflineAugmentation, TrainValidSplit
+from NetworkDataset import AspectRatioBasedSampler, NetworkDataset, OfflineAugmentation, TrainValidSplit
 from Network import *
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchvision.transforms import transforms
@@ -45,10 +45,11 @@ from ignite.contrib.handlers.tensorboard_logger import *
 import Config
 import logging
 from torchmetrics import *
-#import ptvsd
+import ptvsd
 from StoppingStrategy import *
 from Loss import dice_loss, focal_loss, tversky_loss
 from utils import JSD
+from NetworkDataset import collater
 
 class NetworkTrainer(QObject):
     train_finsihed_signal = pyqtSignal();
@@ -91,15 +92,14 @@ class NetworkTrainer(QObject):
         #we are forced to load the newly trained model
         self.__model_load_status = False;
         
-        num_classes = len(layer_names);
-        self.model.set_num_classes(num_classes);
+        self.model.set_num_classes(Config.NUM_CLASSES);
 
         self.optimizer = optim.RMSprop(self.model.parameters(), lr=Config.LEARNING_RATE, weight_decay=1e-4);
 
-        self.precision_estimator = Precision(num_classes=1).to(Config.DEVICE);
-        self.recall_estimator = Recall(num_classes=1).to(Config.DEVICE);
-        self.accuracy_esimator = Accuracy(num_classes=1).to(Config.DEVICE);
-        self.f1_esimator = F1Score(num_classes=1).to(Config.DEVICE);
+        self.precision_estimator = Precision(num_classes = 1 if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES).to(Config.DEVICE);
+        self.recall_estimator = Recall(num_classes = 1 if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES).to(Config.DEVICE);
+        self.accuracy_esimator = Accuracy(num_classes = 1 if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES).to(Config.DEVICE);
+        self.f1_esimator = F1Score(num_classes = 1 if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES).to(Config.DEVICE);
 
         self.writer = SummaryWriter(os.path.sep.join([Config.PROJECT_ROOT,'experiments']));
 
@@ -111,11 +111,12 @@ class NetworkTrainer(QObject):
         self.train_dataset = NetworkDataset(train_radiograph, train_masks, Config.train_transforms, train = True);
         self.valid_dataset = NetworkDataset(valid_radiographs, valid_masks, Config.valid_transforms, train = False, layer_names = layer_names);
 
-        self.train_loader = DataLoader(self.train_dataset, 
-        batch_size= Config.BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True, drop_last=True);
+        self.sampler_train = AspectRatioBasedSampler(self.train_dataset, batch_size=Config.BATCH_SIZE, drop_last=False);
+        #self.sampler_valid = AspectRatioBasedSampler(self.valid_dataset, batch_size=Config.BATCH_SIZE, drop_last=False);
 
-        self.valid_loader = DataLoader(self.valid_dataset, 
-        batch_size= Config.BATCH_SIZE, shuffle=False);
+        self.train_loader = DataLoader(self.train_dataset, collate_fn=collater, num_workers=0, batch_sampler=self.sampler_train);
+
+        self.valid_loader = DataLoader(self.valid_dataset, batch_size=1, );
 
         #self.gen.set_num_classes(Config.NUM_CLASSES);
 
@@ -158,8 +159,8 @@ class NetworkTrainer(QObject):
 
         #output = torch.sigmoid(output);
         #output = torch.where(output > 0.5, 1.0, 0.0);
-        f_loss = focal_loss(output, gt,  arange_logits=True);
-        t_loss = tversky_loss(output, gt, sigmoid=True, arange_logits=True)
+        f_loss = focal_loss(output, gt,  arange_logits=True, mutual_exclusion=True);
+        t_loss = tversky_loss(output, gt, sigmoid=True, arange_logits=True, mutual_exclusion=True)
         #bce_loss = self.bce(output.permute(0,2,3,1), gt.float());
             #total_loss += bce_loss;
         
@@ -173,7 +174,7 @@ class NetworkTrainer(QObject):
         step = 0;
         update_step = 1;
         with tqdm(loader, unit="batch") as batch_data:
-            for radiograph, mask, _ in batch_data:
+            for radiograph, mask in batch_data:
                 radiograph, mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE)
                 mask.require_grad = True;
                 radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE);
@@ -218,14 +219,15 @@ class NetworkTrainer(QObject):
 
     def __eval_one_epoch(self, loader, model):
         epoch_loss = 0;
-        total_pred_lbl = None;
-        total_mask = None;
-        first = True;
+        total_prec = [];
+        total_rec = [];
+        total_f1 = [];
+        total_acc = [];
         count = 0;
         
         with torch.no_grad():
             with tqdm(loader, unit="batch") as epoch_data:
-                for radiograph, mask, _ in epoch_data:
+                for radiograph, mask in epoch_data:
                     radiograph,mask = radiograph.to(Config.DEVICE), mask.to(Config.DEVICE);
 
                     pred,_ = model(radiograph);
@@ -233,28 +235,33 @@ class NetworkTrainer(QObject):
 
                     epoch_loss += loss.item();
                     
-                    if first is True:
-                        total_pred = pred;
-                        total_mask = mask;
-                        first = False;
+                    if Config.MUTUAL_EXCLUSION is False:
+                        pred = (torch.sigmoid(pred));
+                        prec = self.precision_estimator(pred.flatten(), mask.flatten().long());
+                        rec = self.recall_estimator(pred.flatten(), mask.flatten().long());
+                        acc = self.accuracy_esimator(pred.flatten(), mask.flatten().long());
+                        f1 = self.f1_esimator(pred.flatten(), mask.flatten().long());
                     else:
-                        total_pred = torch.cat([total_pred, pred], dim=0);
-                        total_mask = torch.cat([total_mask, mask], dim=0);
+                        pred = (torch.softmax(pred, dim = 1)).permute(0,2,3,1);
+                        prec = self.precision_estimator(pred, mask.long());
+                        rec = self.recall_estimator(pred, mask.long());
+                        acc = self.accuracy_esimator(pred, mask.long());
+                        f1 = self.f1_esimator(pred, mask.long());
+                    
+
+                    total_prec.append(prec.item());
+                    total_rec.append(rec.item());
+                    total_f1.append(f1.item());
+                    total_acc.append(acc.item());
 
                     count += 1;
 
-        total_pred_lbl = (torch.sigmoid(total_pred)).permute(0,2,3,1);
-        total_mask = total_mask;
-        prec = self.precision_estimator(total_pred_lbl.flatten(), total_mask.flatten());
-        rec = self.recall_estimator(total_pred_lbl.flatten(), total_mask.flatten());
-        acc = self.accuracy_esimator(total_pred_lbl.flatten(), total_mask.flatten());
-        f1 = self.f1_esimator(total_pred_lbl.flatten(), total_mask.flatten());
 
-        return epoch_loss / count, acc, prec, rec, f1;
+        return epoch_loss / count, np.mean(total_acc), np.mean(total_prec), np.mean(total_rec), np.mean(total_f1);
 
 
     def start_train_slot(self, layers_names):
-        #ptvsd.debug_this_thread();
+        ptvsd.debug_this_thread();
         logging.info("Start training...");
         self.initialize_new_train(layers_names);
 
@@ -264,7 +271,7 @@ class NetworkTrainer(QObject):
 
         while(True):
             self.model.train();
-            self.__train_one_epoch(self.train_loader,self.model, self.optimizer);
+            #self.__train_one_epoch(self.train_loader,self.model, self.optimizer);
 
             self.model.eval();
             train_loss, train_acc, train_precision, train_recall, train_f1 = self.__eval_one_epoch(self.train_loader, self.model);

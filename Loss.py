@@ -34,15 +34,24 @@ def focal_loss(logits,
                 true,
                 alpha = 0.8,
                 gamma = 2.0,
-                arange_logits = False):
+                arange_logits = False,
+                mutual_exclusion = False):
 
-    if arange_logits is True:
-        logits = logits.permute(0,2,3,1);
-    
-    bce = binary_cross_entropy_with_logits(logits, true.float(), reduction='none');
-    bce_exp = torch.exp(-bce);
-    f_loss = torch.mean(alpha * (1-bce_exp)**gamma*bce);
-    return f_loss;
+    if mutual_exclusion is False:
+        if arange_logits is True:
+            logits = logits.permute(0,2,3,1);
+        
+        bce = binary_cross_entropy_with_logits(logits, true.float(), reduction='none');
+        bce_exp = torch.exp(-bce);
+        f_loss = torch.mean(alpha * (1-bce_exp)**gamma*bce);
+        return f_loss;
+    else:
+        p = torch.softmax(logits, axis = 1).permute(0,2,3,1);
+        #assuming true is a one hot vector
+        ce_loss = -torch.log(p * true);
+        focal_mul = (1-p)**gamma;
+        f_loss = focal_mul * ce_loss;
+        return torch.mean(f_loss);
 #===============================================================
 
 #===============================================================
@@ -52,13 +61,17 @@ def tversky_loss(logits,
                 beta = 1.0,
                 sigmoid = False,
                 arange_logits = False,
-                smooth = 1):
-
+                smooth = 1,
+                mutual_exclusion = False):
+    
     if arange_logits is True:
         logits = logits.permute(0,2,3,1);
     
-    if sigmoid is True:
-        logits = torch.sigmoid(logits);
+    if mutual_exclusion is False:
+        if sigmoid is True:
+            logits = torch.sigmoid(logits);
+    else:
+        logits = torch.softmax(logits,dim=3);
     
     dims = (1,2,3);
     tp = torch.sum(true * logits, dims);

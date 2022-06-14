@@ -3,15 +3,8 @@
 from genericpath import isdir, isfile
 import os
 from posixpath import basename
-import shutil
 from typing import Dict
-from PyQt5 import QtWidgets
-from PyQt5 import QtCore
-from boto import config
 import cv2
-from PyQt5 import QtGui
-from ignite import base
-from pandas.core.frame import DataFrame
 import pickle
 from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import QObject, pyqtSlot, pyqtSignal
@@ -20,7 +13,6 @@ from shutil import copyfile
 from glob import glob
 import pydicom
 from pydicom import dcmread
-import pandas as pd
 import Class
 from Utility import *
 import Config
