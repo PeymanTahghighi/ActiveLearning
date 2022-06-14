@@ -1,5 +1,6 @@
 #==================================================================
 #==================================================================
+from ast import List
 from copy import deepcopy, copy
 from posixpath import basename
 import logging
@@ -52,6 +53,7 @@ class WaitingWindow(QWidget):
         self.progress_bar_epoch.setMaximum(0)
         self.window_grid_layout.addWidget(self.progress_bar_epoch,item_count,0);
         item_count+=1;
+    
     
     def closeEvent(self, evnt):
         evnt.ignore()
@@ -456,7 +458,7 @@ class NewProjectWindow(QWidget):
     
 class MainWindow(QMainWindow):
     start_train_signal = pyqtSignal(list);
-    save_project_signal = pyqtSignal(dict, bool);
+    save_project_signal = pyqtSignal(bool);
     save_project_as_signal = pyqtSignal(str);
     load_model_signal = pyqtSignal();
     predict_on_unlabeled_signal = pyqtSignal(str, dict);
@@ -470,6 +472,9 @@ class MainWindow(QMainWindow):
     update_gc_signal = pyqtSignal();
     reset_gc_signal = pyqtSignal();
     update_foreground_with_layer_signal = pyqtSignal();
+    add_from_files_signal = pyqtSignal(list);
+    add_from_folder_signal= pyqtSignal(str);
+    add_from_dicom_folder_signal= pyqtSignal(str);
 
     def __init__(self):
         super().__init__();
@@ -505,9 +510,13 @@ class MainWindow(QMainWindow):
         self.erase_gc_selected = False;
         #---------------------------------------------------------------
 
-        self.th = QThread();
-        Class.network_trainer.moveToThread(self.th);
-        self.th.start();
+        self.network_trainer_thread = QThread();
+        Class.network_trainer.moveToThread(self.network_trainer_thread);
+        self.network_trainer_thread.start();
+
+        self.data_pool_handler_thread = QThread();
+        Class.data_pool_handler.moveToThread(self.data_pool_handler_thread);
+        self.data_pool_handler_thread.start();
 
         self.init_ui();
 
@@ -927,7 +936,7 @@ class MainWindow(QMainWindow):
             self.segments_list.clear();
     
     def save_project(self, show_dialog = True):
-        self.save_project_signal.emit(Class.data_pool_handler.data_list, show_dialog);
+        self.save_project_signal.emit(show_dialog);
     
     def predict_on_unlabeled(self):
         if self.radiograph_view.layer_count != 0:
@@ -950,7 +959,7 @@ class MainWindow(QMainWindow):
     
     def update_file_info_label(self):
         total = len(Class.data_pool_handler.data_list);
-        unlabeled = len(Class.data_pool_handler.get_all_unlabeled());
+        unlabeled = len(Class.data_pool_handler.get_all());
         self.file_info_label_status_bar.setText(f'Total radiographs: {total}\tTotal labeled: {total - unlabeled}');
 
     def update_all_radiographs_segments_list(self):
@@ -1186,8 +1195,9 @@ class MainWindow(QMainWindow):
         dialog.setDirectory(QtCore.QDir.currentPath())
 
         if dialog.exec_() == QDialog.Accepted:
-            paths = dialog.selectedFiles()[0];
-            Class.data_pool_handler.add_from_folder(paths);
+            self.busy_indicator_window.show();
+            path = dialog.selectedFiles()[0];
+            self.add_from_folder_signal.emit(path);
     
     def open_dicom_folder_slot(self):
         options = QFileDialog.Options()
@@ -1202,8 +1212,11 @@ class MainWindow(QMainWindow):
         dialog.setDirectory(QtCore.QDir.currentPath())
 
         if dialog.exec_() == QDialog.Accepted:
+            self.busy_indicator_window.show();
+            #path = dialog.selectedFiles()[0];
             paths = dialog.selectedFiles()[0];
-            Class.data_pool_handler.add_from_dicom_folder(paths);
+            #Class.data_pool_handler.add_from_dicom_folder(paths);
+            self.add_from_dicom_folder_signal.emit(paths);
     
     def select_files_slot(self):
         options = QFileDialog.Options()
@@ -1218,8 +1231,9 @@ class MainWindow(QMainWindow):
         dialog.setDirectory(QtCore.QDir.currentPath())
 
         if dialog.exec_() == QDialog.Accepted:
-            path = dialog.selectedFiles();
-            Class.data_pool_handler.add_from_files(path);
+            self.busy_indicator_window.show();
+            paths = list(dialog.selectedFiles());
+            self.add_from_files_signal.emit(paths);
 
     def add_segmentation_clicked(self):
         layer_names = self.radiograph_view.get_layer_names();
@@ -1286,17 +1300,25 @@ class MainWindow(QMainWindow):
             else:
                 self.radiograph_view.m_mouse_layer.pen_color = QtGui.QColor(255,255,255);
 
-    def load_finished(self):
+    def load_finished(self, cnt, show = True):
         self.update_file_info_label();
 
         #Update the list of available already labeled radiographs
         self.update_all_radiographs_segments_list()
-    
-        #Load and set a random image from unlabeled data pool
-        pixmap = Class.data_pool_handler.load_random_unlabeled();
-        self.radiograph_label.setText(f"Radiograph Name: {Class.data_pool_handler.current_radiograph}")
-        if pixmap is not None:
-            self.radiograph_view.set_image(pixmap);
+
+        #if we don't have any images available to show, load one
+        if Class.data_pool_handler.current_radiograph == "":
+            #Load and set a random image from unlabeled data pool
+            pixmap = Class.data_pool_handler.load_unlabeled();
+            self.radiograph_label.setText(f"Radiograph Name: {Class.data_pool_handler.current_radiograph}")
+            if pixmap is not None:
+                self.radiograph_view.set_image(pixmap);
+        self.busy_indicator_window.hide();
+        if cnt != -1:
+            show_dialoge(QMessageBox.Icon.Information, f"Total files added: {cnt}", "Info",QMessageBox.Ok);
+        elif cnt == -1:
+            if show:
+                show_dialoge(QMessageBox.Icon.Information, f"Loaded successfully", "Info",QMessageBox.Ok)
 
     def next_sample_clicked(self):
         
@@ -1465,6 +1487,7 @@ class MainWindow(QMainWindow):
         #Setup new project, remove every loaded item.
         self.radiograph_view.clear_whole();
         Class.data_pool_handler.clear_datalist();
+        Class.data_pool_handler.current_radiograph = "";
         self.segments_list.clear();
         self.all_radiographs_list.clear();
         self.update_file_info_label();
@@ -1655,6 +1678,9 @@ if __name__=='__main__':
     window.update_gc_signal.connect(window.radiograph_view.update_gc_slot);
     window.reset_gc_signal.connect(window.radiograph_view.reset_gc_slot);
     window.update_foreground_with_layer_signal.connect(window.radiograph_view.update_foreground_with_layer_slot);
+    window.add_from_files_signal.connect(Class.data_pool_handler.add_from_files_slot);
+    window.add_from_folder_signal.connect(Class.data_pool_handler.add_from_folder_slot);
+    window.add_from_dicom_folder_signal.connect(Class.data_pool_handler.add_from_dicom_folder_slot);
 
     ret = Class.project_handler.open_project();
     

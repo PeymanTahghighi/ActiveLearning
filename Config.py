@@ -17,6 +17,7 @@ FINISH_TRAINING = False;
 PREDEFINED_COLORS = [[0, 0, 255], [255, 0, 0], [0, 255, 0], [102, 0, 204], [255, 102, 102], [255, 128, 0], [255, 255, 0]];
 PREDEFINED_NAMES = ['Vertebra', 'Spinous process', 'Ribs', 'Thoracic Limbs', 'Pulmonary Arteries', 'Mediastinum', 'Trachea', 'Bronchi', 'Abdomen', 'Lung', 'Spine'];
 PROJECT_PREDEFINED_NAMES = [];
+NEXT_SAMPLE_SELECTION = 'Similarity';
  #Initialize transforms for training and validation
 train_transforms = A.Compose(
 [

@@ -1,5 +1,6 @@
 from copy import deepcopy
 from glob import glob
+from msilib.schema import Class
 from shutil import copyfile
 from PyQt5.QtWidgets import QMessageBox
 import cv2
@@ -11,6 +12,7 @@ import pandas as pd
 from PyQt5.QtCore import QObject, pyqtSignal
 import os
 import Config
+import Class
 
 class ProjectHandler(QObject):
 
@@ -56,15 +58,15 @@ class ProjectHandler(QObject):
         Config.PROJECT_NAME = self.__current_project_name;
         Config.PROJECT_ROOT = path;
         self.__projects_root = Config.PROJECT_ROOT;
-        self.save_project(dict(), False);
+        self.new_project_setup_signal.emit();
+        self.save_project(False);
         self.save_project_meta(list());
         self.set_project_name_signal.emit(proj_name);
-        self.new_project_setup_signal.emit();
 
         pass
 
-    def save_project(self, d, show_dialoge_bool = True):
-        pickle.dump(d,open(os.path.sep.join([self.__projects_root, self.__current_project_name + '.uog']),'wb'));
+    def save_project(self, show_dialoge_bool = True):
+        pickle.dump(Class.data_pool_handler.data_list,open(os.path.sep.join([self.__projects_root, self.__current_project_name + '.uog']),'wb'));
         #df = pd.DataFrame(list(d.items()), columns = ['image_path','state', 'type']);
         #df.to_pickle();
         if show_dialoge_bool:
@@ -163,6 +165,8 @@ class ProjectHandler(QObject):
         pass
     
     def open_project(self, path = None):
+
+        self.new_project_setup_signal.emit();
         #If no name given, open most recent project
         if path == None:
             mrp = open('mrp.uog','r');
@@ -178,12 +182,6 @@ class ProjectHandler(QObject):
                 Config.PROJECT_ROOT = self.__projects_root;
 
                 data_list = pickle.load(open(project_path,'rb'));
-
-                
-
-                #tmp_datalist = self.__relod_dataset();
-                #data_list = tmp_datalist;
-
 
                 tmp_datalist, change = self.__check_for_unload_images(data_list);
 

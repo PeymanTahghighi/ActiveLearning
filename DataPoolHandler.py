@@ -7,6 +7,7 @@ import shutil
 from typing import Dict
 from PyQt5 import QtWidgets
 from PyQt5 import QtCore
+from boto import config
 import cv2
 from PyQt5 import QtGui
 from ignite import base
@@ -18,23 +19,28 @@ import numpy as np
 from shutil import copyfile
 from glob import glob
 import pydicom
+from pydicom import dcmread
 import pandas as pd
-from pydicom.fileset import FileSet
 import Class
 from Utility import *
 import Config
 from Strategy import get_grad_embeddings, get_cluster_centers
+from utils import JSD
+import ptvsd
+from pathlib import Path
 #==================================================================
 #==================================================================
 
 #------------------------------------------------------------------
 class DataPoolHandler(QObject):
-    load_finished_signal = pyqtSignal();
+    load_finished_signal = pyqtSignal(int, bool);
     save_project_signal = pyqtSignal(bool);
 
     def __init__(self):
         super().__init__();
         self.__data_list = dict();
+        #this is only for compatibility issues, we can remove this later on
+        self.__data_list_hist = dict();
         self.__current_radiograph = "";
 
     @property 
@@ -55,29 +61,28 @@ class DataPoolHandler(QObject):
     def clear_datalist(self):
         self.__data_list.clear();
     
-    def add_from_files(self, paths):
+    def add_from_files_slot(self, paths):
         """
             This function loads the files indicated by the 'paths' parameter.
         """
+        ptvsd.debug_this_thread();
         cnt = self.__load_file_paths(paths);
-        show_dialoge(QMessageBox.Icon.Information, f"Total files added: {cnt}", "Info",QMessageBox.Ok)
-        self.load_finished_signal.emit();
         self.save_project_signal.emit(False);
+        self.load_finished_signal.emit(cnt, True);
         pass
     
     
-    def add_from_folder(self, folder_path):
+    def add_from_folder_slot(self, folder_path):
         """
             Adds data from folder. This function reads an entire folder and find image format 
             files such as "jpg", "png" and so on. It only loads common image formats. We use 
             seperate function to load dicom folder.
         """
         cnt = self.__load_folder(folder_path);
-        show_dialoge(QMessageBox.Icon.Information, f"Total files added: {cnt}", "Info",QMessageBox.Ok)
-        self.load_finished_signal.emit();
         self.save_project_signal.emit(False);
+        self.load_finished_signal.emit(cnt, True);
     
-    def add_from_dicom_folder(self, folder_path):
+    def add_from_dicom_folder_slot(self, folder_path):
         """
             Adds data from folder. This function reads an entire folder and search
             fold dicomdir file. This file contain all information about dicom files
@@ -85,16 +90,15 @@ class DataPoolHandler(QObject):
             is not a dicom directory.
         """
         cnt = self.__load_dicom_folder(folder_path);
-        show_dialoge(QMessageBox.Icon.Information, f"Total files added: {cnt}", "Info",QMessageBox.Ok);
-        self.load_finished_signal.emit();
         self.save_project_signal.emit(False);
+        self.load_finished_signal.emit(cnt, True);
     
-    def get_all_unlabeled(self):
-        unlabeled = [];
+    def get_all(self, type = 'unlabeled'):
+        ret = [];
         for key in self.__data_list.keys():
-            if self.__data_list[key][0] == 'unlabeled':
-                unlabeled.append([key, self.__data_list[key][1]]);
-        return unlabeled;
+            if self.__data_list[key][0] == type:
+                ret.append([key, self.__data_list[key][1], self.__data_list[key][2]]);
+        return ret;
     
     '''
         This function loads a radiograph from disk with all layers
@@ -113,33 +117,24 @@ class DataPoolHandler(QObject):
             r = load_radiograph(path, radiograph_type);
             return r, list();
 
-    def get_all_labeled(self):
-        labeled = [];
-        for key in self.__data_list.keys():
-            if self.__data_list[key][0] == 'labeled':
-                labeled.append(key);
-        return labeled;
+    def load_unlabeled(self):
 
-    def load_random_unlabeled(self):
-        unlabeled = self.get_all_unlabeled();  
+        unlabeled = self.get_all(); 
+
         if len(unlabeled) == 0:
-            show_dialoge(QMessageBox.Icon.Information,
-             f"No unlabeled radiographs found. Please add new radiographs or selected images already labaled from the list", 
-             "No radiographs found",QMessageBox.Ok);
-            return None;
-        #Randomly select one data
-        if len(self.__data_list) != 1:
+                self.current_radiograph == '';
+                show_dialoge(QMessageBox.Icon.Information,
+                f"No unlabeled radiographs found. Please add new radiographs or selected images already labaled from the list", 
+                "No radiographs found",QMessageBox.Ok);
+                return None;
+        
+        if Config.NEXT_SAMPLE_SELECTION == 'Random':
             r = np.random.randint(0,len(unlabeled));
             p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[r][0]]);
             pixmap = load_radiograph(p, unlabeled[r][1]);
-            if pixmap.isNull():
-                    print('Cannot open')
-                    return
             self.__current_radiograph = unlabeled[r][0];
-        else:
-            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[0][0]]);
-            pixmap = load_radiograph(p, unlabeled[0][1]);
-            self.__current_radiograph = unlabeled[0][0];
+        elif Config.NEXT_SAMPLE_SELECTION == 'Similarity':
+            pixmap = self.__get_next_similarity();
         
         return pixmap;
 
@@ -147,9 +142,10 @@ class DataPoolHandler(QObject):
         '''
             Here we apply our data selection strategy.
         '''
-        unlabeled = self.get_all_unlabeled();
+        unlabeled = self.get_all(type = 'unlabeled');
 
         if len(unlabeled) == 0:
+            self.current_radiograph == '';
             show_dialoge(QMessageBox.Icon.Information,
              f"No unlabeled radiographs found. Please add new radiographs or selected images already labaled from the list", 
              "No radiographs found",QMessageBox.Ok);
@@ -165,19 +161,34 @@ class DataPoolHandler(QObject):
         #     idx = self.__get_data_badge_strategy(unlabeled, m);
         # else:
         #random data sampling
-        idx = np.random.randint(0,len(unlabeled));
-        while unlabeled[idx][0] == self.__current_radiograph:
+        if Config.NEXT_SAMPLE_SELECTION == 'Random':
             idx = np.random.randint(0,len(unlabeled));
-        
-        p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[idx][0]]);
-        pixmap = load_radiograph(p, unlabeled[idx][1]);
-        self.__current_radiograph = unlabeled[idx][0];
-
+            while unlabeled[idx][0] == self.__current_radiograph:
+                idx = np.random.randint(0,len(unlabeled));
+            
+            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[idx][0]]);
+            pixmap = load_radiograph(p, unlabeled[idx][1]);
+            self.__current_radiograph = unlabeled[idx][0];
+        elif Config.NEXT_SAMPLE_SELECTION == 'Similarity':
+            pixmap = self.__get_next_similarity();
         return pixmap;
     
     def delete_radiograph(self, txt):
         self.__data_list.pop(txt);
-        os.remove(os.path.sep.join([Config.PROJECT_ROOT, 'images', txt]));
+        if os.path.exists(os.path.sep.join([Config.PROJECT_ROOT, 'images', txt])):
+            os.remove(os.path.sep.join([Config.PROJECT_ROOT, 'images', txt]));
+
+        #delete labels if exists
+        file_name = txt[:txt.rfind('.')];
+        if os.path.exists(os.path.join(Config.PROJECT_ROOT, 'labels', f'{file_name}.meta')):
+            meta_file = pickle.load(open(os.path.join(Config.PROJECT_ROOT, 'labels', f'{file_name}.meta'), 'rb'));
+            for k in meta_file.keys():
+                if k != 'rot' and k!= 'exp':
+                    os.remove(os.path.join(Config.PROJECT_ROOT, 'labels',meta_file[k][2]));
+        
+            os.remove(os.path.join(Config.PROJECT_ROOT, 'labels', f'{file_name}.meta'));
+        
+        self.save_project_signal.emit(False);
 
     def submit_label(self,  arr, rot, exp):
         self.__data_list[self.__current_radiograph][0] = "labeled";
@@ -206,16 +217,69 @@ class DataPoolHandler(QObject):
         pass
     
     def open_project_slot(self, dc, show = True):
-        self.__data_list = dc;
-        if show:
-            show_dialoge(QMessageBox.Icon.Information, f"Loaded successfully", "Info",QMessageBox.Ok)
-        self.load_finished_signal.emit();
+        self.__update_histograms(dc);
+        self.load_finished_signal.emit(-1, show);
     
 
     #*****************
     #Private functions
     #*****************
 
+    def __update_histograms(self, dl):
+        '''
+            Here we update histograms if we have not calculated for any images
+            This way, we can have backward compatibility.
+        '''
+        ptvsd.debug_this_thread();
+        change = False;
+        for k in dl.keys():
+            #if we only have two items for each image,
+            #it basically means that we don't have any histograms
+            if len(dl[k]) == 2:
+                pixmap = load_radiograph(os.path.join(Config.PROJECT_ROOT, 'images', k), dl[k][1], 'array');
+                hist = cv2.calcHist([pixmap], [0], None, [256], [0,255]);
+                dl[k].append(hist/hist.sum());
+                change = True;
+        
+        self.__data_list =  dl;
+        if change is True:
+            self.save_project_signal.emit(False);
+        
+        return dl;
+
+    def __get_next_similarity(self):
+        labeled = self.get_all('labeled'); 
+        unlabeled = self.get_all();
+
+        #if we don't have any labeled images, return one ranomly
+        if len(labeled) == 0:
+            idx = np.random.randint(0,len(unlabeled));
+            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[idx][0]]);
+            pixmap = load_radiograph(p, unlabeled[idx][1]);
+            self.__current_radiograph = unlabeled[idx][0];
+
+            return pixmap;
+
+        max_d = 0;
+        selected_idx = 0;
+        for idx, uh in enumerate(unlabeled):
+            min_d = 100;
+            for lh in labeled:
+                dist = JSD(uh[2], lh[2]);
+                if dist < min_d:
+                    min_d = dist;
+            
+            if min_d > max_d:
+                max_d = min_d;
+                selected_idx = idx;
+
+
+        p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[selected_idx][0]]);
+        pixmap = load_radiograph(p, unlabeled[selected_idx][1]);
+        self.__current_radiograph = unlabeled[selected_idx][0];
+
+        return pixmap;
+        
     def __is_dicom(self, path):
         """
             This function checks if a given path is dicom or not using
@@ -252,13 +316,17 @@ class DataPoolHandler(QObject):
         if(self.__is_dicom(item_path)):
             if item_name not in self.__data_list.keys():
                 #save as a dicom image
-                self.__data_list[item_name] = ["unlabeled", "dicom"];
+                pixmap = load_radiograph(item_path, 'dicom', return_type='array');
+                hist = cv2.calcHist([pixmap], [0], None, [256], [0,255]);
+                self.__data_list[item_name] = ["unlabeled", "dicom", hist/hist.sum()];
                 file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', item_name]);
                 copyfile(item_path, file_new_path);
                 return 1;
         elif(self.__is_image(item_path)):
             if item_name not in self.__data_list.keys():
-                self.__data_list[item_name] = ["unlabeled", "image"];
+                pixmap = load_radiograph(item_path, 'image', return_type='array');
+                hist = cv2.calcHist([pixmap], [0], None, [256], [0,255]);
+                self.__data_list[item_name] = ["unlabeled", "image", hist/hist.sum()];
                 file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', item_name]);
                 copyfile(item_path, file_new_path);
                 return 1;
@@ -283,6 +351,7 @@ class DataPoolHandler(QObject):
         return name;
 
     def __load_dicom_folder(self, folder_path):
+        ptvsd.debug_this_thread();
         """
             In this function we use os.walk function to get all files
             in the directory and then we search for "DICOMDIR" file.
@@ -297,7 +366,6 @@ class DataPoolHandler(QObject):
         lst = os.walk(folder_path);
         has_dicomdir = False;
         dicomdir_file_path = "";
-        dicom_file_name = "";
         #search for the dicom file
         for root, dir, entry in lst:
             for item_name in entry:
@@ -312,16 +380,47 @@ class DataPoolHandler(QObject):
                 break;
 
         if(has_dicomdir):
-            ds = FileSet(dicomdir_file_path);
-            for instance in ds:
-                dicom = instance.load();
-                dicom_file_name = self.__check_duplicate_name(dicom_file_name_root);
-                #add actual data to the list
-                self.__data_list[dicom_file_name] = ["unlabeled", "dicom"];
-                #save as inside project directory.
-                file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', dicom_file_name]);
-                dicom.save_as(file_new_path);
-                cnt += 1;
+            dicomdir_file_root = dicomdir_file_path[:dicomdir_file_path.rfind('\\')];
+            ds = dcmread(dicomdir_file_path)
+            # Iterate through the PATIENT records
+            for patient in ds.patient_records:
+
+                # Find all the STUDY records for the patient
+                studies = [
+                    ii for ii in patient.children if ii.DirectoryRecordType == "STUDY"
+                ]
+                for study in studies:
+                    # Find all the SERIES records in the study
+                    all_series = [
+                        ii for ii in study.children if ii.DirectoryRecordType == "SERIES"
+                    ]
+                    for series in all_series:
+                        # Find all the IMAGE records in the series
+                        images = [
+                            ii for ii in series.children
+                            if ii.DirectoryRecordType == "IMAGE"
+                        ]
+                        
+                        # Get the absolute file path to each instance
+                        #   Each IMAGE contains a relative file path to the root directory
+                        elems = [ii["ReferencedFileID"] for ii in images]
+                        # Make sure the relative file path is always a list of str
+                        paths = [[ee.value] if ee.VM == 1 else ee.value for ee in elems]
+                        paths = [Path(*p) for p in paths]
+
+                        # List the instance file paths
+                        for p in paths:
+                            p = os.fspath(p);
+                            file_name = p[p.rfind('\\')+1:];
+                            data_list_name = f"{dicom_file_name_root}_{file_name}";
+                            if data_list_name not in self.__data_list:
+                                #save as a dicom image
+                                pixmap = load_radiograph(os.path.join(dicomdir_file_root, p), 'dicom', return_type='array');
+                                hist = cv2.calcHist([pixmap], [0], None, [256], [0,255]);
+                                self.__data_list[data_list_name] = ["unlabeled", "dicom", hist/hist.sum()];
+                                file_new_path = os.path.sep.join([Config.PROJECT_ROOT, 'images', data_list_name]);
+                                copyfile(os.path.join(dicomdir_file_root, p), file_new_path);
+                                cnt += 1;
         return cnt;
     
     def __load_folder(self, folder_path):

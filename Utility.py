@@ -4,6 +4,8 @@ from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QMessageBox
 from PyQt5.QtGui import QIcon, QImage, QPixmap
 import os
 import pickle
+
+import cv2
 import Config
 import pydicom
 from pydicom.pixel_data_handlers.util import apply_modality_lut, apply_voi_lut
@@ -56,10 +58,13 @@ def load_radiograph_masks(radiograph_path, mask_path, type):
 
     return radiograph_pixmap, mask_pixmap_list;
 
-def load_radiograph(radiograph_path, type):
+def load_radiograph(radiograph_path, type, return_type = 'pixmap'):
     if type=='dicom':
         ds = pydicom.dcmread(radiograph_path, force=True);
         pix_arr = ds.pixel_array;
+        if return_type != 'pixmap':
+            return pix_arr;
+
         pix_arr = apply_modality_lut(pix_arr, ds);
         w = apply_voi_lut(pix_arr, ds);
         w = w - w.min();
@@ -70,6 +75,9 @@ def load_radiograph(radiograph_path, type):
         qImg = QImage(image_2d_scaled, width, height, bytesPerLine, QImage.Format_Grayscale8)
         pixmap = QPixmap.fromImage(qImg);
     else:
-        pixmap = QPixmap(radiograph_path);
+        if return_type == 'pixmap':
+            pixmap = QPixmap(radiograph_path);
+        else:
+            pixmap = cv2.imread(radiograph_path, cv2.IMREAD_GRAYSCALE);
 
     return pixmap;

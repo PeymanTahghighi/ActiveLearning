@@ -45,10 +45,10 @@ from ignite.contrib.handlers.tensorboard_logger import *
 import Config
 import logging
 from torchmetrics import *
-import ptvsd
+#import ptvsd
 from StoppingStrategy import *
 from Loss import dice_loss, focal_loss, tversky_loss
-
+from utils import JSD
 
 class NetworkTrainer(QObject):
     train_finsihed_signal = pyqtSignal();
@@ -99,7 +99,7 @@ class NetworkTrainer(QObject):
         self.precision_estimator = Precision(num_classes=1).to(Config.DEVICE);
         self.recall_estimator = Recall(num_classes=1).to(Config.DEVICE);
         self.accuracy_esimator = Accuracy(num_classes=1).to(Config.DEVICE);
-        self.f1_esimator = F1(num_classes=1).to(Config.DEVICE);
+        self.f1_esimator = F1Score(num_classes=1).to(Config.DEVICE);
 
         self.writer = SummaryWriter(os.path.sep.join([Config.PROJECT_ROOT,'experiments']));
 
@@ -254,7 +254,7 @@ class NetworkTrainer(QObject):
 
 
     def start_train_slot(self, layers_names):
-        ptvsd.debug_this_thread();
+        #ptvsd.debug_this_thread();
         logging.info("Start training...");
         self.initialize_new_train(layers_names);
 
