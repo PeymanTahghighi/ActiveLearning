@@ -241,7 +241,6 @@ class NetworkDataset(Dataset):
             logging.info("Train_");
             self.radiographs = radiographs;
             self.masks = masks;
-
             self.transform = transform;
         else:
             logging.info("Validation_");
