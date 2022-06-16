@@ -54,26 +54,47 @@ def save_samples(model, val_loader, epoch, folder):
     x, y = x.to(Config.DEVICE), y.to(Config.DEVICE)
     with torch.no_grad():
         output, _ = model(x)
-        output = (torch.sigmoid(output) > 0.5).permute(0,2,3,1);
+        if Config.MUTUAL_EXCLUSION is False:
+            output = (torch.sigmoid(output) > 0.5).permute(0,2,3,1);
+        else:
+            output = torch.softmax(output, dim = 1);
+            output = torch.argmax(output, dim = 1);
         b_size = output.size()[0];
 
         for b in range(b_size):
             b_output = output[b];
 
-            output_colored = torch.zeros((Config.NUM_CLASSES, b_output.shape[0], b_output.shape[1], 3)).long().to(Config.DEVICE);
-            for i in range(Config.NUM_CLASSES):
-                col = np.full((Config.IMAGE_SIZE,Config.IMAGE_SIZE, 3), [Config.PREDEFINED_COLORS[i][0], 
-                Config.PREDEFINED_COLORS[i][1], 
-                Config.PREDEFINED_COLORS[i][2]]);
+            if Config.MUTUAL_EXCLUSION is False:
+                output_colored = torch.zeros((Config.NUM_CLASSES, b_output.shape[0], b_output.shape[1], 3)).long().to(Config.DEVICE);
+                for i in range(Config.NUM_CLASSES):
+                    col = np.full((Config.IMAGE_SIZE,Config.IMAGE_SIZE, 3), [Config.PREDEFINED_COLORS[i][0], 
+                    Config.PREDEFINED_COLORS[i][1], 
+                    Config.PREDEFINED_COLORS[i][2]]);
 
-                output_cls = b_output[:,:,i];
+                    output_cls = b_output[:,:,i];
+                    
+                    col = torch.tensor(col).to(Config.DEVICE).long();
+                    a = output_colored[i];
+                    cond = (output_cls == 1).bool().unsqueeze(axis = 2);
+                    output_colored[i] = torch.where(cond, col, output_colored[i]);
+
+                output_grid = make_grid(output_colored.permute(0,3,1,2), Config.NUM_CLASSES);
+            
+            else:
+                output_colored = torch.zeros((Config.NUM_CLASSES-1, b_output.shape[0], b_output.shape[1], 3)).long().to(Config.DEVICE);
+                for i in range(1, Config.NUM_CLASSES):
+                    col = np.full((b_output.shape[0], b_output.shape[1], 3), [Config.PREDEFINED_COLORS[i-1][0], 
+                    Config.PREDEFINED_COLORS[i-1][1], 
+                    Config.PREDEFINED_COLORS[i-1][2]]);
+
+                    output_cls = (b_output == i);
+                    
+                    col = torch.tensor(col).to(Config.DEVICE).long();
+                    cond = (output_cls == 1).bool().unsqueeze(axis = 2);
+                    output_colored[i-1] = torch.where(cond, col, output_colored[i-1]);
+
+                output_grid = make_grid(output_colored.permute(0,3,1,2), Config.NUM_CLASSES-1);
                 
-                col = torch.tensor(col).to(Config.DEVICE).long();
-                a = output_colored[i];
-                cond = (output_cls == 1).bool().unsqueeze(axis = 2);
-                output_colored[i] = torch.where(cond, col, output_colored[i]);
-
-            output_grid = make_grid(output_colored.permute(0,3,1,2), Config.NUM_CLASSES);
             save_image(output_grid.float(), os.path.sep.join([Config.PROJECT_ROOT, folder, f"input_{epoch}-{b}.png"]))
 
         if epoch == 1:

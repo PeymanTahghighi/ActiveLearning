@@ -18,7 +18,7 @@ from Utility import *
 import Config
 from Strategy import get_grad_embeddings, get_cluster_centers
 from utils import JSD
-import ptvsd
+#import ptvsd
 from pathlib import Path
 #==================================================================
 #==================================================================
@@ -57,7 +57,7 @@ class DataPoolHandler(QObject):
         """
             This function loads the files indicated by the 'paths' parameter.
         """
-        ptvsd.debug_this_thread();
+        #ptvsd.debug_this_thread();
         cnt = self.__load_file_paths(paths);
         self.save_project_signal.emit(False);
         self.load_finished_signal.emit(cnt, True);
@@ -222,7 +222,7 @@ class DataPoolHandler(QObject):
             Here we update histograms if we have not calculated for any images
             This way, we can have backward compatibility.
         '''
-        ptvsd.debug_this_thread();
+        #ptvsd.debug_this_thread();
         change = False;
         for k in dl.keys():
             #if we only have two items for each image,
@@ -343,7 +343,7 @@ class DataPoolHandler(QObject):
         return name;
 
     def __load_dicom_folder(self, folder_path):
-        ptvsd.debug_this_thread();
+        #ptvsd.debug_this_thread();
         """
             In this function we use os.walk function to get all files
             in the directory and then we search for "DICOMDIR" file.

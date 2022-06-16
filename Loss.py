@@ -3,7 +3,8 @@
 import torch
 import torch.nn as nn
 import torch.functional as F
-from torch.nn.functional import one_hot, binary_cross_entropy_with_logits
+from torch.nn.functional import one_hot, binary_cross_entropy_with_logits, cross_entropy
+import Config
 #===============================================================
 #===============================================================
 
@@ -46,9 +47,15 @@ def focal_loss(logits,
         f_loss = torch.mean(alpha * (1-bce_exp)**gamma*bce);
         return f_loss;
     else:
-        p = torch.softmax(logits, axis = 1).permute(0,2,3,1);
+        logits = logits.permute(0,2,3,1).view(-1,Config.NUM_CLASSES);
+        true = true.view(-1);
+        ce_loss = cross_entropy(logits, true.long(), reduction='none');
+        p = torch.softmax(logits, axis = 1);
+        #true_one_hot = one_hot(true.long(), Config.NUM_CLASSES);
+        p = torch.take_along_dim(p, true.long().unsqueeze(dim = 1), dim = 1).squeeze();
+        #p = torch.index_select(p, dim = 3, index = true);
         #assuming true is a one hot vector
-        ce_loss = -torch.log(p * true);
+        #ce_loss = -torch.log(p * true_one_hot + 1e-6);
         focal_mul = (1-p)**gamma;
         f_loss = focal_mul * ce_loss;
         return torch.mean(f_loss);
@@ -65,6 +72,7 @@ def tversky_loss(logits,
                 mutual_exclusion = False):
     
     if arange_logits is True:
+        true_one_hot = one_hot(true.long(), Config.NUM_CLASSES);
         logits = logits.permute(0,2,3,1);
     
     if mutual_exclusion is False:
@@ -74,9 +82,9 @@ def tversky_loss(logits,
         logits = torch.softmax(logits,dim=3);
     
     dims = (1,2,3);
-    tp = torch.sum(true * logits, dims);
-    fp = torch.sum((1-true) * logits, dims);
-    fn = torch.sum(true * (1-logits), dims);
+    tp = torch.sum(logits * true_one_hot, dims);
+    fp = torch.sum((1-logits) * true_one_hot, dims);
+    fn = torch.sum(logits * (1-true_one_hot), dims);
     tversky = torch.mean((tp + smooth) / (tp + alpha*fp + beta*fn + smooth))  
     return 1-tversky;
 #===============================================================
