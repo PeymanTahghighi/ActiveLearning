@@ -272,9 +272,11 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
         return pixels[i:i + 3]
     
     def _get_cardinal_points(self, have_seen, center_pos, w, h, pixels, rgb):
+        s = pixels[pixels == np.array(rgb)];
+        ss = s.sum();
         points = []
         cx, cy = center_pos
-        pix = self._get_pixel(cx , cy, pixels, w);
+        pix = pixels[cy, cx];
         for x, y in [(1, 0), (0, 1), (-1, 0), (0, -1)]:
             xx, yy = cx + x, cy + y
             if (xx >= 0 and xx < w and
@@ -287,13 +289,13 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
         return points
 
     def _fill_region(self, pos, pen):
-        image = self.m_pixmap.toImage();
-        size = image.size();
-        w,h = size.width(), size.height();
-        pixels = image.bits().asstring(w * h * 4);
+        dividing_factor = 2;
+        pixels = pixmap_to_numpy(self.m_pixmap);
+        w,h = pixels.shape[1], pixels.shape[0];
+        pixels = cv2.resize(pixels, (int(h/dividing_factor), int(w/dividing_factor)));
 
-        pos = QtCore.QPoint(pos.x(), pos.y());
-        queue = [(pos.x(),pos.y())];
+        pos = QtCore.QPoint(int(pos.x()/dividing_factor), int(pos.y()/dividing_factor));
+        queue = [(int(pos.x()/dividing_factor),int(pos.y()/dividing_factor))];
 
         rgb = self.pen_color.getRgb();
         r,g,b = (rgb[2]), (rgb[1]), (rgb[0]);
@@ -305,9 +307,9 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
         while(len(queue) != 0):
             #get and fill the current point
             x,y = queue.pop();
-            painter.drawPoint(QtCore.QPoint(x, y));
+            painter.drawPoint(QtCore.QPoint(x*dividing_factor, y*dividing_factor));
 
-            a = self._get_cardinal_points(seen, (x,y), w, h, pixels, [r,g,b]);
+            a = self._get_cardinal_points(seen, (int(x/dividing_factor),int(y/dividing_factor)), int(w/dividing_factor), int(h/dividing_factor), pixels, [r,g,b]);
             queue.extend(a);
 
         painter.end();
