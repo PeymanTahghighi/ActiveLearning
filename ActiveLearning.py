@@ -970,6 +970,7 @@ class MainWindow(QMainWindow):
         self.all_radiographs_list.clear();
         #Update the list of available already labeled radiographs
         dl = Class.data_pool_handler.data_list;
+        dl = dict(sorted(dl.items()))
         for r in dl.keys():
             if dl[r][0] == 'labeled':
                 list_item_meta = LabelledRadListItem();
