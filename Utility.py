@@ -58,7 +58,7 @@ def load_radiograph_masks(radiograph_path, mask_path, type):
 
     return radiograph_pixmap, mask_pixmap_list;
 
-def load_radiograph(radiograph_path, type, return_type = 'pixmap'):
+def load_radiograph(radiograph_path, type, return_type = 'pixmap', imread_type = cv2.IMREAD_GRAYSCALE):
     if type=='dicom':
         ds = pydicom.dcmread(radiograph_path, force=True);
         pix_arr = ds.pixel_array;
@@ -78,6 +78,6 @@ def load_radiograph(radiograph_path, type, return_type = 'pixmap'):
         if return_type == 'pixmap':
             pixmap = QPixmap(radiograph_path);
         else:
-            pixmap = cv2.imread(radiograph_path, cv2.IMREAD_GRAYSCALE);
+            pixmap = cv2.imread(radiograph_path, imread_type);
 
     return pixmap;

@@ -1,3 +1,4 @@
+from msilib.schema import Class
 import pickle
 from PyQt5 import QtCore
 from PyQt5.QtGui import QIcon
@@ -12,6 +13,7 @@ from numpy.core.fromnumeric import mean
 from numpy.lib.npyio import load
 from torch.nn.modules.loss import L1Loss
 from torch.utils import data
+from Utility import load_radiograph
 from utils import load_checkpoint, save_checkpoint, save_samples
 import torch
 import torch.nn as nn
@@ -45,11 +47,12 @@ from ignite.contrib.handlers.tensorboard_logger import *
 import Config
 import logging
 from torchmetrics import *
-import ptvsd
+#import ptvsd
 from StoppingStrategy import *
 from Loss import dice_loss, focal_loss, tversky_loss
 from utils import JSD
 from NetworkDataset import collater
+import Class
 
 class NetworkTrainer(QObject):
     train_finsihed_signal = pyqtSignal();
@@ -86,7 +89,7 @@ class NetworkTrainer(QObject):
         return self.model, self.__model_load_status;
     
     def initialize_new_train(self, layer_names):
-        
+        #ptvsd.debug_this_thread();
         #set model_load_satus to false so next time we are going to use the model
         #we are forced to load the newly trained model
         self.__model_load_status = False;
@@ -104,17 +107,17 @@ class NetworkTrainer(QObject):
 
         train_radiograph, train_masks, valid_radiographs, valid_masks = \
         self.train_valid_split.get(os.path.sep.join([Config.PROJECT_ROOT,'images']), 
-            os.path.sep.join([Config.PROJECT_ROOT,'labels']),0.1, layer_names);
+            os.path.sep.join([Config.PROJECT_ROOT,'labels']), 0.2, layer_names, Class.data_pool_handler.data_list);
         
         self.__clear_masks();
 
         self.train_dataset = NetworkDataset(train_radiograph, train_masks, Config.train_transforms, train = True, layer_names=layer_names);
         self.valid_dataset = NetworkDataset(valid_radiographs, valid_masks, Config.valid_transforms, train = False, layer_names = layer_names);
 
-        self.sampler_train = AspectRatioBasedSampler(self.train_dataset, batch_size=Config.BATCH_SIZE, drop_last=False);
+       # self.sampler_train = AspectRatioBasedSampler(self.train_dataset, batch_size=Config.BATCH_SIZE, drop_last=False);
         #self.sampler_valid = AspectRatioBasedSampler(self.valid_dataset, batch_size=Config.BATCH_SIZE, drop_last=False);
 
-        self.train_loader = DataLoader(self.train_dataset, num_workers=Config.NUM_WORKERS, shuffle = True);
+        self.train_loader = DataLoader(self.train_dataset, num_workers=Config.NUM_WORKERS, shuffle = True, batch_size=Config.BATCH_SIZE);
 
         self.valid_loader = DataLoader(self.valid_dataset, batch_size=1, num_workers=Config.NUM_WORKERS);
 
@@ -136,7 +139,7 @@ class NetworkTrainer(QObject):
 
         self.stopping_strategy = CombinedTrainValid(1,5);
 
-        self.model.reset_weights();
+        #self.model.reset_weights();
 
         #Initialize the weights of generator and discriminator
         #self.disc.apply(self.initialize_weights)
@@ -164,8 +167,8 @@ class NetworkTrainer(QObject):
 
         #output = torch.sigmoid(output);
         #output = torch.where(output > 0.5, 1.0, 0.0);
-        f_loss = focal_loss(output, gt,  arange_logits=True, mutual_exclusion=True);
-        t_loss = tversky_loss(output, gt, sigmoid=True, arange_logits=True, mutual_exclusion=True)
+        f_loss = focal_loss(output, gt,  arange_logits=True, mutual_exclusion= Config.MUTUAL_EXCLUSION);
+        t_loss = tversky_loss(output, gt, sigmoid=True, arange_logits=True, mutual_exclusion= Config.MUTUAL_EXCLUSION)
         #bce_loss = self.bce(output.permute(0,2,3,1), gt.float());
             #total_loss += bce_loss;
         
@@ -352,11 +355,11 @@ class NetworkTrainer(QObject):
         # if we haven't loaded a model yet or the loading wasn't successfull
         # we should not do anything and return immediately.
 
-        ptvsd.debug_this_thread();
+        #ptvsd.debug_this_thread();
         if self.__model_load_status:
             self.model.eval();
             with torch.no_grad():
-                radiograph_image = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'images', lbl]),cv2.IMREAD_GRAYSCALE);
+                radiograph_image = load_radiograph(os.path.sep.join([Config.PROJECT_ROOT, 'images', lbl]), dc[lbl][1], 'array');
                 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8));
                 radiograph_image = clahe.apply(radiograph_image);
                 radiograph_image = np.expand_dims(radiograph_image, axis=2);
@@ -391,7 +394,7 @@ class NetworkTrainer(QObject):
                         mask = np.zeros(shape=(w, h, 3),dtype=np.uint8);
                         mask_for_class = p[:,:,i];
                         tmp = (mask_for_class==1);
-                        mask[(tmp)] = Config.PREDEFINED_COLORS[i];
+                        mask[tmp[:w,:h]] = Config.PREDEFINED_COLORS[i];
                         mask = cv2.resize(mask,(h,w), interpolation=cv2.INTER_NEAREST);
                         mask_list.append(mask);
                 else:

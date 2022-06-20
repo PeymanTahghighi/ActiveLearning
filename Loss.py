@@ -72,19 +72,20 @@ def tversky_loss(logits,
                 mutual_exclusion = False):
     
     if arange_logits is True:
-        true_one_hot = one_hot(true.long(), Config.NUM_CLASSES);
+        
         logits = logits.permute(0,2,3,1);
     
     if mutual_exclusion is False:
         if sigmoid is True:
             logits = torch.sigmoid(logits);
     else:
+        true = one_hot(true.long(), Config.NUM_CLASSES);
         logits = torch.softmax(logits,dim=3);
     
     dims = (1,2,3);
-    tp = torch.sum(logits * true_one_hot, dims);
-    fp = torch.sum((1-logits) * true_one_hot, dims);
-    fn = torch.sum(logits * (1-true_one_hot), dims);
+    tp = torch.sum(logits * true, dims);
+    fp = torch.sum((1-logits) * true, dims);
+    fn = torch.sum(logits * (1-true), dims);
     tversky = torch.mean((tp + smooth) / (tp + alpha*fp + beta*fn + smooth))  
     return 1-tversky;
 #===============================================================

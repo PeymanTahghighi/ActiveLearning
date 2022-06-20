@@ -67,7 +67,7 @@ def save_samples(model, val_loader, epoch, folder):
             if Config.MUTUAL_EXCLUSION is False:
                 output_colored = torch.zeros((Config.NUM_CLASSES, b_output.shape[0], b_output.shape[1], 3)).long().to(Config.DEVICE);
                 for i in range(Config.NUM_CLASSES):
-                    col = np.full((Config.IMAGE_SIZE,Config.IMAGE_SIZE, 3), [Config.PREDEFINED_COLORS[i][0], 
+                    col = np.full((b_output.shape[0],b_output.shape[1], 3), [Config.PREDEFINED_COLORS[i][0], 
                     Config.PREDEFINED_COLORS[i][1], 
                     Config.PREDEFINED_COLORS[i][2]]);
 

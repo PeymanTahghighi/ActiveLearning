@@ -1,7 +1,7 @@
 from PyQt5 import QtCore
 from gevent import config
 from pandas.io import pickle
-from Utility import get_radiograph_label_meta
+from Utility import get_radiograph_label_meta, load_radiograph
 from PIL import ImageColor, Image
 import PIL
 from imgaug.augmenters.meta import Sometimes
@@ -34,7 +34,7 @@ class TrainValidSplit():
     def __init__(self):
         pass
 
-    def get(self, root_radiograph, root_mask, valid_split, layers_names):
+    def get(self, root_radiograph, root_mask, valid_split, layers_names, data_list):
         self.radiograph_root = root_radiograph;
         self.mask_root = root_mask;
         self.mask_names = [];
@@ -58,12 +58,13 @@ class TrainValidSplit():
             #If this image has all the layers wanted, add it to the list of radiographs
             if add is True:
                 selected_masks.append(all_mask_names[m]);
-                selected_radiographs.append(all_radiograph_names[m]);
+                selected_radiographs.append([all_radiograph_names[m], data_list[os.path.basename(all_radiograph_names[m])][1]]);
         
         #calculate histogram of all selected radiographs once
         selected_radiographs_hist = [];
         for sr in selected_radiographs:
-            selected_radiographs_hist.append(cv2.calcHist([cv2.imread(sr, cv2.IMREAD_GRAYSCALE)],[0], None, [256], [0,256] ))
+            file_name = os.path.basename(sr[0]);
+            selected_radiographs_hist.append(data_list[file_name][2])
 
         selected_indices = [];
         selected_index_fir_step = np.random.randint(0,len(selected_radiographs_hist));
@@ -155,7 +156,7 @@ class OfflineAugmentation():
         
         for i in range(len(radiographs)):
             #load both radiograph and mask
-            radiograph_image = cv2.imread(radiographs[i],cv2.IMREAD_UNCHANGED);
+            radiograph_image = load_radiograph(radiographs[i], cv2.IMREAD_UNCHANGED);
             #print(radiographs[i]);
             
 
@@ -255,7 +256,7 @@ class NetworkDataset(Dataset):
         
         for i in range(len(radiographs)):
             #load both radiograph and mask
-            radiograph_image = cv2.imread(radiographs[i],cv2.IMREAD_UNCHANGED);
+            radiograph_image = load_radiograph(radiographs[i][0], radiographs[i][1],'array');
 
             #Open meta file and open relating masks
             df = pd.read_pickle(masks[i]);
@@ -293,7 +294,7 @@ class NetworkDataset(Dataset):
 
             #segmap = SegmentationMapsOnImage(mask_image, shape=radiograph_image.shape);
 
-            filename = os.path.basename(radiographs[i]);
+            filename = os.path.basename(radiographs[i][0]);
             filename = filename[:filename.find('.')];
 
             #Add original image as the first in list
@@ -312,14 +313,16 @@ class NetworkDataset(Dataset):
 
         self.__radiographs = radiographs;
         self.__transform = transform;
+        self.__train = train;
 
     def __len__(self):
         return len(self.__radiographs);
 
     def __getitem__(self, index):
-        radiograph_image_path = self.__radiographs[index];
+        radiograph_image_path = self.__radiographs[index][0];
+        radiograph_image_type = self.__radiographs[index][1];
         
-        radiograph_image = cv2.imread(radiograph_image_path,cv2.IMREAD_GRAYSCALE);
+        radiograph_image = load_radiograph(radiograph_image_path, radiograph_image_type, 'array');
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
         radiograph_image = clahe.apply(radiograph_image);
         radiograph_image = np.expand_dims(radiograph_image, axis=2);
@@ -332,21 +335,22 @@ class NetworkDataset(Dataset):
         radiograph_image = transformed["image"];
         mask_image = transformed['mask'];
         
-        # _,w,h = radiograph_image.shape;
+        # if self.__train is False:
+        #     _,w,h = radiograph_image.shape;
 
-        # pad_width = 32 - w%32;
-        # pad_height = 32 - h%32;
+        #     pad_width = 32 - w%32;
+        #     pad_height = 32 - h%32;
 
-        # padded_radiograph = torch.zeros((3, w + pad_width, h + pad_height), dtype=torch.float32);
+        #     padded_radiograph = torch.zeros((3, w + pad_width, h + pad_height), dtype=torch.float32);
 
-        # if len(mask_image.shape) > 2:
+
         #     msk_size = mask_image.shape[-1];
         #     padded_seg = torch.zeros((w + pad_width, h + pad_height, msk_size), dtype=torch.float32);
-        # else:
-        #     padded_seg = torch.zeros((w + pad_width, h + pad_height), dtype=torch.float32);
 
-        # padded_radiograph[:, :w, :h] = radiograph_image;
-        # padded_seg[:w, :h] = mask_image;
+        #     padded_radiograph[:, :w, :h] = radiograph_image;
+        #     padded_seg[:w, :h] = mask_image;
+
+        #     return padded_radiograph, padded_seg;
 
 
 
@@ -363,7 +367,7 @@ class NetworkDataset(Dataset):
         # return radiograph_image, index;
     
     def image_aspect_ratio(self, index):
-        radiograph_image = cv2.imread(self.__radiographs[index], cv2.IMREAD_GRAYSCALE);
+        radiograph_image = cv2.imread(self.__radiographs[index][0], cv2.IMREAD_GRAYSCALE);
         return float(radiograph_image.shape[1]) / float(radiograph_image.shape[0])
 
 

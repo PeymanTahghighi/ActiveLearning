@@ -15,7 +15,7 @@ class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride) -> None:
         super().__init__();
         self.net = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size, stride, bias=False, padding=1),
+            nn.Conv2d(in_channels, out_channels, kernel_size, stride, bias=False, padding='same'),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(0.2)
         )
@@ -93,7 +93,7 @@ class Unet(nn.Module):
         if num_classes != None:
             self.final = nn.Conv2d(64, num_classes, kernel_size=1, stride=1, padding=0);
         
-        self.state_dict_copy = deepcopy(self.state_dict());
+        #self.state_dict_copy = deepcopy(self.state_dict());
 
         #for one time only we have to calculate the number of weight parameters we have
         self.__weight_parameters = 0;
@@ -104,7 +104,7 @@ class Unet(nn.Module):
     def set_num_classes(self, n):
         self.final = nn.Conv2d(64, n, kernel_size=1, stride=1, padding=0).to(DEVICE);
         #update state dict
-        self.state_dict_copy = deepcopy(self.state_dict());
+        #self.state_dict_copy = deepcopy(self.state_dict());
     
     def forward(self, inp):
         d_1 = self.input_blocks(inp);
@@ -133,8 +133,8 @@ class Unet(nn.Module):
     def get_num_weight_parameters(self):
         return self.__weight_parameters;
     
-    def reset_weights(self):
-        self.load_state_dict(self.state_dict_copy);
+    # def reset_weights(self):
+    #     self.load_state_dict(self.state_dict_copy);
 #---------------------------------------------------------------
 
 #---------------------------------------------------------------
