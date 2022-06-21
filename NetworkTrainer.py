@@ -366,7 +366,7 @@ class NetworkTrainer(QObject):
                 radiograph_image = np.repeat(radiograph_image, 3,axis=2);
                 
                 w,h,_ = radiograph_image.shape;
-                transformed = Config.valid_transforms(image = radiograph_image);
+                transformed = Config.predict_transforms(image = radiograph_image);
                 radiograph_image = transformed["image"];
                 radiograph_image = radiograph_image.to(Config.DEVICE);
 

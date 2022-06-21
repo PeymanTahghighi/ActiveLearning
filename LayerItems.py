@@ -8,6 +8,7 @@ import numpy as np
 import cv2
 import math
 import copy
+from skimage.segmentation import flood_fill
 
 from numpy.typing import _16Bit
 
@@ -119,7 +120,7 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
                 self.m_line_draw.setP1(event.pos())
                 self.m_line_draw.setP2(event.pos())
             elif self.m_current_state == LayerItem.FillState:
-                self._fill_region(event.pos(), QtGui.QPen(self.pen_color, 1 ,QtCore.Qt.SolidLine, QtCore.Qt.RoundCap, QtCore.Qt.RoundJoin));
+                self._fill_region(event.pos());
             elif self.m_current_state == LayerItem.MagneticLasso:
                 scene_pos = self.mapToScene(event.pos());
                 if scene_pos.x() > 0 \
@@ -267,63 +268,22 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
         painter.end()
         self.update()
 
-    def _get_pixel(self, x , y, pixels, w):
-        i = (x + (y * w)) * 4
-        return pixels[i:i + 3]
-    
-    def _get_cardinal_points(self, have_seen, center_pos, w, h, pixels, rgb):
-        s = pixels[pixels == np.array(rgb)];
-        ss = s.sum();
-        points = []
-        cx, cy = center_pos
-        pix = pixels[cy, cx];
-        for x, y in [(1, 0), (0, 1), (-1, 0), (0, -1)]:
-            xx, yy = cx + x, cy + y
-            if (xx >= 0 and xx < w and
-                yy >= 0 and yy < h and
-                (xx, yy) not in have_seen):
-                if(rgb[0] != pix[0] or rgb[1] != pix[1] or rgb[2] != pix[2]):
-                    points.append((xx, yy))
-                    have_seen.add((xx, yy))
-
-        return points
-
-    def _fill_region(self, pos, pen):
-        dividing_factor = 2;
+    def _fill_region(self, pos):
         pixels = pixmap_to_numpy(self.m_pixmap);
-        w,h = pixels.shape[1], pixels.shape[0];
-        pixels = cv2.resize(pixels, (int(h/dividing_factor), int(w/dividing_factor)));
-
-        pos = QtCore.QPoint(int(pos.x()/dividing_factor), int(pos.y()/dividing_factor));
-        queue = [(int(pos.x()/dividing_factor),int(pos.y()/dividing_factor))];
-
+        pixels_fill = pixels.copy();
+        #pixels = cv2.cvtColor(pixels, cv2.COLOR_RGB2GRAY);
         rgb = self.pen_color.getRgb();
         r,g,b = (rgb[2]), (rgb[1]), (rgb[0]);
-
-        seen = set();
-        painter = QtGui.QPainter(self.m_pixmap);
-        painter.setPen(pen);
-
-        while(len(queue) != 0):
-            #get and fill the current point
-            x,y = queue.pop();
-            painter.drawPoint(QtCore.QPoint(x*dividing_factor, y*dividing_factor));
-
-            a = self._get_cardinal_points(seen, (int(x/dividing_factor),int(y/dividing_factor)), int(w/dividing_factor), int(h/dividing_factor), pixels, [r,g,b]);
-            queue.extend(a);
-
-        painter.end();
+        pixels_fill = cv2.floodFill(pixels_fill, None, seedPoint= (int(pos.x()), int(pos.y())),newVal= (r,g,b))[1];
+        pixels_fill = cv2.cvtColor(pixels_fill, cv2.COLOR_BGR2RGB);
+        
+        height, width, channel = pixels_fill.shape
+        bytesPerLine = 3 * width
+        qImg = QImage(pixels_fill.data, width, height, bytesPerLine, QImage.Format_RGB888)
+        self.m_pixmap = QPixmap.fromImage(qImg);
+        mask = self.m_pixmap.createMaskFromColor(QtGui.QColor(0,0,0),QtCore.Qt.MaskMode.MaskInColor);
+        self.m_pixmap.setMask(mask);
         self.update();
-    
-    def _check_condition(self, p, w, h, pixels, rgb):
-        x,y = p;
-        pix = self._get_pixel(x,y,pixels,w);
-
-        if(x > 0 and x < w and y > 0 and y < h):
-            if(rgb[0] == pix[0] and rgb[1] == pix[1] and rgb[2] == pix[2]):
-                return False;
-            return True;
-        return False;
 
     def get_numpy(self):
         image = self.m_pixmap.toImage()
