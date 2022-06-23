@@ -4,7 +4,7 @@ from albumentations.pytorch import ToTensorV2
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu";
 LEARNING_RATE = 1e-5
-BATCH_SIZE = 2
+BATCH_SIZE = 1
 NUM_WORKERS = 4
 IMAGE_SIZE = 1024
 VIRUTAL_BATCH = 2;

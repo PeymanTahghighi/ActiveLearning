@@ -224,11 +224,12 @@ class LayerItem(QtWidgets.QGraphicsRectItem):
                 self.update();
     
     def cancel_magnetic_lasso(self):
-        self.__magnetic_lasso_prev_point = None;
-        self.__magnetic_lasso_undo_list.clear();
-        self.__magnetic_lasso_active = False;
-        self.m_pixmap = self.__magnetic_lasso_original_image.copy(QtCore.QRect());
-        self.update();
+        if self.__magnetic_lasso_active is True:
+            self.__magnetic_lasso_prev_point = None;
+            self.__magnetic_lasso_undo_list.clear();
+            self.__magnetic_lasso_active = False;
+            self.m_pixmap = self.__magnetic_lasso_original_image.copy(QtCore.QRect());
+            self.update();
 
     def accept_magnetic_lasso(self):
         self.__magnetic_lasso_prev_point = None;
