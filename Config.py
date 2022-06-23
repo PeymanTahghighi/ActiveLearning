@@ -7,7 +7,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu";
 LEARNING_RATE = 1e-5
 BATCH_SIZE = 1
 NUM_WORKERS = 4
-IMAGE_SIZE = 512
+IMAGE_SIZE = 1024
 VIRUTAL_BATCH = 2;
 NUM_EPOCHS = 40
 EPSILON = 1e-5
@@ -20,7 +20,7 @@ PREDEFINED_COLORS = [[0, 0, 255], [255, 0, 0], [0, 255, 0], [102, 0, 204], [255,
 PREDEFINED_NAMES = ['Vertebra', 'Spinous process', 'Ribs', 'Thoracic Limbs', 'Pulmonary Arteries', 'Mediastinum', 'Trachea', 'Bronchi', 'Abdomen', 'Lung', 'Spine'];
 PROJECT_PREDEFINED_NAMES = [];
 NEXT_SAMPLE_SELECTION = 'Similarity';
-MUTUAL_EXCLUSION = False;
+MUTUAL_EXCLUSION = True;
  #Initialize transforms for training and validation
 train_transforms = A.Compose(
 [
@@ -47,6 +47,7 @@ valid_transforms = A.Compose(
 
 predict_transforms = A.Compose(
     [
+    A.LongestMaxSize(max_size = IMAGE_SIZE),
     A.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]),
     ToTensorV2()
     ]

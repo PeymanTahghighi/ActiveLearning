@@ -360,6 +360,7 @@ class NetworkTrainer(QObject):
             self.model.eval();
             with torch.no_grad():
                 radiograph_image = load_radiograph(os.path.sep.join([Config.PROJECT_ROOT, 'images', lbl]), dc[lbl][1], 'array');
+                wb,hb = radiograph_image.shape;
                 clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8));
                 radiograph_image = clahe.apply(radiograph_image);
                 radiograph_image = np.expand_dims(radiograph_image, axis=2);
@@ -406,6 +407,7 @@ class NetworkTrainer(QObject):
                         mask = np.zeros(shape=(w, h, 3),dtype=np.uint8);
                         mask_for_class = (p==i);
                         mask[mask_for_class[:w,:h]] = Config.PREDEFINED_COLORS[i-1];
+                        mask = cv2.resize(mask,(hb,wb), interpolation=cv2.INTER_NEAREST);
                         mask_list.append(mask);
 
 
