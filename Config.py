@@ -4,7 +4,7 @@ from albumentations.pytorch import ToTensorV2
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu";
 LEARNING_RATE = 1e-5
-BATCH_SIZE = 1
+BATCH_SIZE = 2
 NUM_WORKERS = 4
 IMAGE_SIZE = 1024
 VIRUTAL_BATCH = 2;
@@ -19,7 +19,7 @@ PREDEFINED_COLORS = [[0, 0, 255], [255, 0, 0], [0, 255, 0], [102, 0, 204], [255,
 PREDEFINED_NAMES = ['Vertebra', 'Spinous process', 'Ribs', 'Thoracic Limbs', 'Pulmonary Arteries', 'Mediastinum', 'Trachea', 'Bronchi', 'Abdomen', 'Lung', 'Spine'];
 PROJECT_PREDEFINED_NAMES = [];
 NEXT_SAMPLE_SELECTION = 'Similarity';
-MUTUAL_EXCLUSION = False;
+MUTUAL_EXCLUSION = True;
 
 
  #Initialize transforms for training and validation

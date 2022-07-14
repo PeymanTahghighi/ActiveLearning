@@ -277,7 +277,7 @@ class NetworkTrainer(QObject):
         return np.mean(epoch_loss), np.mean(total_acc), np.mean(total_prec), np.mean(total_rec), np.mean(total_f1);
 
     def start_train_slot(self, layers_names):
-        #ptvsd.debug_this_thread();
+       # ptvsd.debug_this_thread();
         logging.info("Start training...");
         self.initialize_new_train(layers_names);
 

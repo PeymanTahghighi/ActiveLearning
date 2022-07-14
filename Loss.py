@@ -47,7 +47,7 @@ def focal_loss(logits,
         f_loss = torch.mean(alpha * (1-bce_exp)**gamma*bce);
         return f_loss;
     else:
-        logits = logits.permute(0,2,3,1).view(-1,Config.NUM_CLASSES);
+        logits = logits.permute(0,2,3,1).reshape(-1,Config.NUM_CLASSES);
         true = true.view(-1);
         ce_loss = cross_entropy(logits, true.long(), reduction='none');
         p = torch.softmax(logits, axis = 1);
