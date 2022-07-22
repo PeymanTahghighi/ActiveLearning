@@ -390,6 +390,9 @@ class LayerSelectionWindow(QWidget):
         if num_selected != 0:
             #We first determine number of classes for training here
             #Since we always have background layer as the first layer we should add 1
+            if num_selected == 1:
+                Config.MUTUAL_EXCLUSION = False;
+            
             if Config.MUTUAL_EXCLUSION is False:
                 Config.NUM_CLASSES = num_selected;
             else:

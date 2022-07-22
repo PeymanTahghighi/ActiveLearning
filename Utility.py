@@ -62,14 +62,20 @@ def load_radiograph(radiograph_path, type, return_type = 'pixmap', imread_type =
     if type=='dicom':
         ds = pydicom.dcmread(radiograph_path, force=True);
         pix_arr = ds.pixel_array;
-        if return_type != 'pixmap':
-            return pix_arr;
+        
 
         pix_arr = apply_modality_lut(pix_arr, ds);
         w = apply_voi_lut(pix_arr, ds);
+
+        if ds['PhotometricInterpretation'].repval == "'MONOCHROME1'":
+            w = np.amax(w) - w;
+
         w = w - w.min();
         image_2d_scaled = (np.maximum(w,0) / w.max()) * 255.0
         image_2d_scaled = np.uint8(image_2d_scaled);
+        
+        if return_type != 'pixmap':
+            return image_2d_scaled;
         height, width = image_2d_scaled.shape;
         bytesPerLine = 1 * width
         qImg = QImage(image_2d_scaled, width, height, bytesPerLine, QImage.Format_Grayscale8)
