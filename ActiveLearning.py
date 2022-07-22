@@ -458,6 +458,56 @@ class NewProjectWindow(QWidget):
             path = dialog.selectedFiles()[0];
             self.open_project_signal.emit(path);
         self.hide();
+
+
+class RenameWindow(QWidget):
+    confirm_new_name = pyqtSignal(str, str)
+    
+    def __init__(self):
+        super().__init__()
+        self.setWindowModality(Qt.ApplicationModal)
+        self.title = "New project";
+        self.left = 0;
+        self.top = 0;
+        self.width = 500;
+        self.height = 500;
+        self.init_ui();
+        self.orig_name = "";
+
+    def init_ui(self):
+        centerPoint = QDesktopWidget().availableGeometry().center();
+        self.setGeometry(centerPoint.x(), centerPoint.y(), self.width, self.height);
+        self.setWindowTitle(self.title);
+
+        self.window_grid_layout = QGridLayout(self);
+        self.window_grid_layout.setContentsMargins(20,20,20,20);
+        self.label = QLabel("Enter new name:");
+        self.window_grid_layout.addWidget(self.label,0,0,1,1);
+
+        self.new_name_text_box = QLineEdit('');
+        self.window_grid_layout.addWidget(self.new_name_text_box,0,1,1,1);   
+
+        self.confirm = QPushButton('Confirm');
+        self.confirm.clicked.connect(self.confirm_clicked);
+        self.window_grid_layout.addWidget(self.confirm, 1, 0, 1, 1);  
+
+        self.cancel = QPushButton('Cancel');
+        self.cancel.clicked.connect(self.cancel_clicked);
+        self.window_grid_layout.addWidget(self.cancel, 1, 1, 1, 1);  
+
+
+    def show_window(self, txt):
+        self.adjustSize();
+        self.show();
+        self.orig_name = txt;
+        name = txt[:txt.rfind('.')];
+        self.new_name_text_box.setText(name);
+    
+    def confirm_clicked(self):
+        self.confirm_new_name.emit(self.orig_name, self.new_name_text_box.text());
+    
+    def cancel_clicked(self):
+        self.hide();
     
 class MainWindow(QMainWindow):
     start_train_signal = pyqtSignal(list);
@@ -508,6 +558,8 @@ class MainWindow(QMainWindow):
         self.layer_selection_window = LayerSelectionWindow();
         self.trainig_info_window = TrainingInfoWindow();
         self.busy_indicator_window = WaitingWindow();
+        self.rename_window = RenameWindow();
+
         self.background_gc_selected = False;
         self.foreground_gc_selected = True;
         self.erase_gc_selected = False;
@@ -522,7 +574,7 @@ class MainWindow(QMainWindow):
         self.data_pool_handler_thread.start();
 
         self.init_ui();
-
+    
     def init_ui(self):
         #Find best location
         centerPoint = QDesktopWidget().availableGeometry();
@@ -834,6 +886,7 @@ class MainWindow(QMainWindow):
         items_count+=1;
 
         self.all_radiographs_list = QListWidget();
+        self.all_radiographs_list.installEventFilter(self)
         self.radiograph_manipulation_box_grid_layout.addWidget(self.all_radiographs_list, items_count, 0, 1, 2);
         self.all_radiographs_list.setFixedHeight(250)
         items_count+=1;
@@ -919,6 +972,7 @@ class MainWindow(QMainWindow):
         self.add_segmentation_button.clicked.connect(self.add_segmentation_clicked);
         self.segmentation_options_window.confirm_clicked_signal.connect(self.add_segmentation_slot);
         self.layer_selection_window.confirm_clicked_signal.connect(self.confirm_labels_clicked);
+        self.rename_window.confirm_new_name.connect(self.confirm_rename_slot);
         self.segmentation_box_tab.currentChanged.connect(self.segmentation_tab_changed);
         #-------------------------------------------------------------
 
@@ -979,6 +1033,7 @@ class MainWindow(QMainWindow):
                 list_item_meta.open_radiograph_signal.connect(self.load_radiograph_slot);
                 list_item_meta.delete_radiograph_signal.connect(self.delete_radiograph_slot);
                 list_widget_item = QListWidgetItem(self.all_radiographs_list);
+                list_widget_item.text = r;
                 list_widget_item.setSizeHint(list_item_meta.sizeHint())
                 self.all_radiographs_list.addItem(list_widget_item);
                 self.all_radiographs_list.setItemWidget(list_widget_item, list_item_meta);
@@ -989,6 +1044,7 @@ class MainWindow(QMainWindow):
                 list_item_meta.open_radiograph_signal.connect(self.load_radiograph_slot);
                 list_item_meta.delete_radiograph_signal.connect(self.delete_radiograph_slot);
                 list_widget_item = QListWidgetItem(self.all_radiographs_list);
+                list_widget_item.text = r;
                 list_widget_item.setSizeHint(list_item_meta.sizeHint())
                 self.all_radiographs_list.addItem(list_widget_item);
                 self.all_radiographs_list.setItemWidget(list_widget_item, list_item_meta);
@@ -1269,6 +1325,14 @@ class MainWindow(QMainWindow):
 
         self.opacity_layer_slider.setValue(255);
 
+    def confirm_rename_slot(self, orig_name, new_name):
+        if Class.data_pool_handler.rename(orig_name, new_name) is True:
+            show_dialoge(QMessageBox.Icon.Information, f"Renamed successfully.", "Info", QMessageBox.Ok);
+            self.update_all_radiographs_segments_list();
+            self.rename_window.hide();  
+        else:
+            show_dialoge(QMessageBox.Icon.Critical, f"Rename failed, file name already exists.", "Info", QMessageBox.Ok);
+
     def delete_segmentation(self):
         msgBox = QMessageBox()
         msgBox.setIcon(QMessageBox.Icon.Warning)
@@ -1323,6 +1387,18 @@ class MainWindow(QMainWindow):
         elif cnt == -1:
             if show:
                 show_dialoge(QMessageBox.Icon.Information, f"Loaded successfully", "Info",QMessageBox.Ok)
+    
+    def eventFilter(self, source, event):
+        if (event.type() == QtCore.QEvent.ContextMenu and
+            source is self.all_radiographs_list):
+            menu = QtWidgets.QMenu()
+            menu.addAction('Rename')
+            if menu.exec_(event.globalPos()):
+                item = source.itemAt(event.pos());
+                
+                self.rename_window.show_window(item.text);
+            return True
+        return super(QMainWindow, self).eventFilter(source, event)
 
     def next_sample_clicked(self):
         
@@ -1595,6 +1671,7 @@ class MainWindow(QMainWindow):
     
     def redo_slot(self):
         self.radiograph_view.redo_event();
+    
 
     #--------------------------------------------------------------
     

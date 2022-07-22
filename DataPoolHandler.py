@@ -11,6 +11,7 @@ from PyQt5.QtCore import QObject, pyqtSlot, pyqtSignal
 import numpy as np
 from shutil import copyfile
 from glob import glob
+import ptvsd
 import pydicom
 from pydicom import dcmread
 import Class
@@ -211,6 +212,43 @@ class DataPoolHandler(QObject):
     def open_project_slot(self, dc, show = True):
         self.__update_histograms(dc);
         self.load_finished_signal.emit(-1, show);
+    
+    def rename(self, orig_name, new_name):
+        
+        ptvsd.debug_this_thread();
+        
+        _,ext = os.path.splitext(orig_name);
+        if f"{new_name}{ext}" in self.__data_list.keys():
+            return False;
+
+        self.__data_list[f"{new_name}{ext}"] = self.__data_list[orig_name];
+        self.__data_list.pop(orig_name);
+        orig_name_we = orig_name[:orig_name.rfind('.')];
+
+        #rename image
+        os.rename(f'{Config.PROJECT_ROOT}\\images\\{orig_name}', f'{Config.PROJECT_ROOT}\\images\\{new_name}{ext}');
+
+        if self.__data_list[f"{new_name}{ext}"][0] == 'labeled':
+            #rename all_labels
+            meta_file = pickle.load(open(os.path.join(Config.PROJECT_ROOT, 'labels', f'{orig_name_we}.meta'), 'rb'));
+            for m in meta_file.keys():
+                if m != 'rot' and m != 'exp':
+                    mask_name = meta_file[m][2];
+                    mask_idx = mask_name[mask_name.find('_'):];
+                    new_mask_name = f"{new_name}{mask_idx}";
+                    meta_file[m][2] = new_mask_name;
+
+                    #rename mask
+                    os.rename(os.path.join(Config.PROJECT_ROOT, 'labels', mask_name), os.path.join(Config.PROJECT_ROOT, 'labels', new_mask_name));
+            
+            #rename meta file
+            os.remove(f'{Config.PROJECT_ROOT}\\labels\\{orig_name_we}.meta');
+            pickle.dump(meta_file, open(f'{Config.PROJECT_ROOT}\\labels\\{new_name}.meta', 'wb'));
+        
+        self.save_project_signal.emit(False);
+
+        return True;
+        pass
     
 
     #*****************
