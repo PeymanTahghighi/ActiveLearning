@@ -228,6 +228,9 @@ class DataPoolHandler(QObject):
         #rename image, if image with new name already exists, skip renaming
         if os.path.exists(f'{Config.PROJECT_ROOT}\\images\\{new_name}{ext}') is False:
             os.rename(f'{Config.PROJECT_ROOT}\\images\\{orig_name}', f'{Config.PROJECT_ROOT}\\images\\{new_name}{ext}');
+        #remove original image
+        if os.path.exists(f'{Config.PROJECT_ROOT}\\images\\{orig_name}') is True:
+            os.remove(f'{Config.PROJECT_ROOT}\\images\\{orig_name}');
 
         if self.__data_list[f"{new_name}{ext}"][0] == 'labeled':
             #rename all_labels
