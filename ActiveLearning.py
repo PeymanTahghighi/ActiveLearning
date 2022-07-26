@@ -1022,13 +1022,14 @@ class MainWindow(QMainWindow):
         unlabeled = len(Class.data_pool_handler.get_all());
         self.file_info_label_status_bar.setText(f'Total radiographs: {total}\tTotal labeled: {total - unlabeled}');
 
-    def update_all_radiographs_segments_list(self):
+    def update_all_radiographs_segments_list(self, item = None):
         #First clear the list
         self.all_radiographs_list.clear();
         #Update the list of available already labeled radiographs
         dl = Class.data_pool_handler.data_list;
         dl = dict(sorted(dl.items()))
         for r in dl.keys():
+            r_name = r[:r.rfind('.')];
             if dl[r][0] == 'labeled':
                 list_item_meta = LabelledRadListItem();
                 list_item_meta.set_name(r, '(0,0,255)')
@@ -1051,6 +1052,15 @@ class MainWindow(QMainWindow):
                 list_widget_item.setSizeHint(list_item_meta.sizeHint())
                 self.all_radiographs_list.addItem(list_widget_item);
                 self.all_radiographs_list.setItemWidget(list_widget_item, list_item_meta);
+            
+            if item is not None:
+                if r_name == item:
+                    item_on_list = list_widget_item;
+        
+
+        if item is not None:
+            item_on_list.setSelected(True)
+            self.all_radiographs_list.scrollToItem(item_on_list, QtWidgets.QAbstractItemView.PositionAtCenter)
     
     def submit_label(self):
         #Aggregate all layers and submit
@@ -1331,7 +1341,7 @@ class MainWindow(QMainWindow):
     def confirm_rename_slot(self, orig_name, new_name):
         if Class.data_pool_handler.rename(orig_name, new_name) is True:
             show_dialoge(QMessageBox.Icon.Information, f"Renamed successfully.", "Info", QMessageBox.Ok);
-            self.update_all_radiographs_segments_list();
+            self.update_all_radiographs_segments_list(new_name);
             self.rename_window.hide();  
         else:
             show_dialoge(QMessageBox.Icon.Critical, f"Rename failed, file name already exists.", "Info", QMessageBox.Ok);
