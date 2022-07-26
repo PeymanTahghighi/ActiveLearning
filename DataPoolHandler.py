@@ -11,7 +11,7 @@ from PyQt5.QtCore import QObject, pyqtSlot, pyqtSignal
 import numpy as np
 from shutil import copyfile
 from glob import glob
-import ptvsd
+#import ptvsd
 import pydicom
 from pydicom import dcmread
 import Class
@@ -215,7 +215,7 @@ class DataPoolHandler(QObject):
     
     def rename(self, orig_name, new_name):
         
-        ptvsd.debug_this_thread();
+        #ptvsd.debug_this_thread();
         
         _,ext = os.path.splitext(orig_name);
         if f"{new_name}{ext}" in self.__data_list.keys():
