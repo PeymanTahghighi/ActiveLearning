@@ -1,7 +1,5 @@
 #===============================================================
 #===============================================================
-from copy import deepcopy
-from shutil import copy
 import torch
 import torch.nn as nn
 from torchvision import models

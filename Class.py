@@ -1,4 +1,3 @@
-from random import Random
 from DataPoolHandler import DataPoolHandler
 from NetworkTrainer import NetworkTrainer
 from ProjectHandler import ProjectHandler

@@ -1,18 +1,7 @@
+from copy import deepcopy
 from msilib.schema import Class
 import pickle
-from PyQt5 import QtCore
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QMessageBox
-from ignite.handlers.checkpoint import Checkpoint
-from ignite.metrics.multilabel_confusion_matrix import MultiLabelConfusionMatrix
-from ignite.metrics.confusion_matrix import ConfusionMatrix
-import ignite.utils as igut
-from sklearn.utils import shuffle
 from PyQt5.QtCore import QObject
-from numpy.core.fromnumeric import mean
-from numpy.lib.npyio import load
-from torch.nn.modules.loss import L1Loss
-from torch.utils import data
 from Utility import load_radiograph
 from utils import load_checkpoint, save_checkpoint, save_samples
 import torch
@@ -22,27 +11,14 @@ import Config
 from NetworkDataset import AspectRatioBasedSampler, NetworkDataset, TrainValidSplit
 from Network import *
 from torch.utils.data import DataLoader, SubsetRandomSampler
-from torchvision.transforms import transforms
 from tqdm import tqdm
 import numpy as np
 import cv2
-import matplotlib.pyplot as plt
 from NetworkEvaluation import *
 from torch.utils.tensorboard import SummaryWriter
-from sklearn.metrics import roc_curve, precision_recall_curve
 from PyQt5.QtCore import pyqtSlot, QObject, pyqtSignal
-from torchvision.utils import save_image
-from ignite.engine import Engine, Events
-from ignite.contrib.handlers import ProgressBar
-from ignite.metrics import RunningAverage
-from ignite.handlers import ModelCheckpoint, Timer, EarlyStopping, global_step_from_engine
 import os
-from PIL import Image
 from glob import glob
-from torchvision.utils import save_image
-import albumentations as A
-import PIL.ImageColor
-import torchvision.transforms.functional as F
 from ignite.contrib.handlers.tensorboard_logger import *
 import Config
 import logging
@@ -50,8 +26,6 @@ from torchmetrics import *
 #import ptvsd
 from StoppingStrategy import *
 from Loss import dice_loss, focal_loss, tversky_loss
-from utils import JSD
-from NetworkDataset import collater
 import Class
 
 class NetworkTrainer(QObject):

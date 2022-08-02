@@ -1,20 +1,17 @@
 #==================================================================
 #==================================================================
-from genericpath import isdir, isfile
+
 import os
-from posixpath import basename
-from typing import Dict
 import cv2
 import pickle
 from PyQt5.QtWidgets import QMessageBox
-from PyQt5.QtCore import QObject, pyqtSlot, pyqtSignal
+from PyQt5.QtCore import QObject,  pyqtSignal
 import numpy as np
 from shutil import copyfile
-from glob import glob
+#import ptvsd
 #import ptvsd
 import pydicom
 from pydicom import dcmread
-import Class
 from Utility import *
 import Config
 from Strategy import get_grad_embeddings, get_cluster_centers
@@ -176,21 +173,22 @@ class DataPoolHandler(QObject):
         if os.path.exists(os.path.join(Config.PROJECT_ROOT, 'labels', f'{file_name}.meta')):
             meta_file = pickle.load(open(os.path.join(Config.PROJECT_ROOT, 'labels', f'{file_name}.meta'), 'rb'));
             for k in meta_file.keys():
-                if k != 'rot' and k!= 'exp':
+                if k != 'misc' and k!='rot' and k!='exp':
                     os.remove(os.path.join(Config.PROJECT_ROOT, 'labels',meta_file[k][2]));
         
             os.remove(os.path.join(Config.PROJECT_ROOT, 'labels', f'{file_name}.meta'));
         
         self.save_project_signal.emit(False);
 
-    def submit_label(self,  arr, rot, exp):
+    def submit_label(self,  arr, misc):
+        #ptvsd.debug_this_thread();
         self.__data_list[self.__current_radiograph][0] = "labeled";
 
         path_tmp = self.__current_radiograph.replace('\\','/');
         #save label to labels folder and save meta data about radiograph
         file_name = os.path.basename(path_tmp);
         file_name = file_name[0:file_name.find('.')];
-        data_dict = dict({'rot' : rot, 'exp': exp});
+        data_dict = dict({'misc' : misc});
 
         for l in range(len(arr)):
             layer = arr[l][0];
@@ -236,7 +234,7 @@ class DataPoolHandler(QObject):
             #rename all_labels
             meta_file = pickle.load(open(os.path.join(Config.PROJECT_ROOT, 'labels', f'{orig_name_we}.meta'), 'rb'));
             for m in meta_file.keys():
-                if m != 'rot' and m != 'exp':
+                if m != 'misc' and m!= 'rot' and m!='exp':
                     mask_name = meta_file[m][2];
                     mask_idx = mask_name[mask_name.find('_'):];
                     new_mask_name = f"{new_name}{mask_idx}";

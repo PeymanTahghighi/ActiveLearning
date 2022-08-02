@@ -1,4 +1,4 @@
-import sys
+
 from PyQt5 import QtCore, QtGui
 from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QMessageBox
 from PyQt5.QtGui import QIcon, QImage, QPixmap
@@ -50,7 +50,7 @@ def load_radiograph_masks(radiograph_path, mask_path, type):
     df = pickle.load(open(mask_path,'rb'));
     mask_pixmap_list = [];
     for k in df.keys():
-        if k != 'rot' and k != 'exp':
+        if k != 'rot' and k != 'exp' and k!= 'misc':
             p = df[k][2];
             path = os.path.sep.join([Config.PROJECT_ROOT, 'labels', p]);
             mask_pixmap = QtGui.QPixmap(path);

@@ -1,10 +1,7 @@
 import torch
-import torch.nn as nn
-from torch.types import Device
 import Config
 from torchvision.utils import make_grid, save_image
 import os
-import cv2
 import numpy as np
 
 def gradient_penalty(critic, real, fake, image):

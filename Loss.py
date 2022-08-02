@@ -1,8 +1,6 @@
 #===============================================================
 #===============================================================
 import torch
-import torch.nn as nn
-import torch.functional as F
 from torch.nn.functional import one_hot, binary_cross_entropy_with_logits, cross_entropy
 import Config
 #===============================================================
