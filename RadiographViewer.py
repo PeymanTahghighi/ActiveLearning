@@ -1,16 +1,14 @@
 #==================================================================
 #==================================================================
-from copy import deepcopy
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtGui import QColor, QCursor, QImage, QPixmap, QPainter, QPen
 from PyQt5.QtCore import QRect, Qt
 from PyQt5.QtWidgets import QGraphicsScene, QGraphicsView, QGraphicsPixmapItem
 import numpy as np
-from numpy.core.fromnumeric import size
 from LayerItems import *
-import math
 import Config
 from utils import pixmap_to_numpy
+from PyQt5.QtWidgets import QShortcut
 #==================================================================
 #==================================================================
 

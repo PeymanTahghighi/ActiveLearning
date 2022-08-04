@@ -1,12 +1,9 @@
 #==================================================================
 #==================================================================
-from ast import List
+
 from copy import deepcopy, copy
-from posixpath import basename
 import logging
 import traceback
-from re import I
-from PIL import ImageColor
 from PyQt5.QtCore import QThread, Qt
 from PyQt5.QtWidgets import QSizePolicy, QApplication, QCheckBox, QColorDialog, QComboBox, QDesktopWidget, QGridLayout, QGroupBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QProgressBar, QPushButton, QRadioButton, QScrollArea, QSlider, QFileDialog, QDialog, QStatusBar, QTabBar, QTabWidget, QTextEdit, QVBoxLayout
 import sys
@@ -21,6 +18,7 @@ from NetworkTrainer import *
 from ProjectHandler import *
 from PIL.ImageColor import *
 from CustomWidgets import *
+import pandas as pd
 #==================================================================
 #==================================================================
 
@@ -562,6 +560,8 @@ class MainWindow(QMainWindow):
         self.trainig_info_window = TrainingInfoWindow();
         self.busy_indicator_window = WaitingWindow();
         self.rename_window = RenameWindow();
+        #we use this dict to assign each item on the list to their name
+        self.__radiograph_list_map = dict();
 
         self.background_gc_selected = False;
         self.foreground_gc_selected = True;
@@ -682,9 +682,9 @@ class MainWindow(QMainWindow):
         #Quality
         items_count = 0;   
         
-        self.rotation_label = QLabel(self);
-        self.rotation_label.setText("Rotation");
-        self.box_quality_labels_grid.addWidget(self.rotation_label,0,0,1,1);
+        self.symmetry_label = QLabel(self);
+        self.symmetry_label.setText("Symmetric hemithoraces");
+        self.box_quality_labels_grid.addWidget(self.symmetry_label,0,0,1,1);
         items_count+=1;
 
         self.exposure_label = QLabel(self);
@@ -692,22 +692,48 @@ class MainWindow(QMainWindow):
         self.box_quality_labels_grid.addWidget(self.exposure_label,1,0,1,1);
         items_count+=1;
 
-        self.rotation_combo_box = QComboBox(self);
-        self.rotation_combo_box.addItem("Mild");
-        self.rotation_combo_box.addItem("Moderate");
-        self.rotation_combo_box.addItem("Marked");
-        self.rotation_combo_box.addItem("Normal");
-        self.box_quality_labels_grid.addWidget(self.rotation_combo_box,0,1,1,1);
+        self.caudal_label = QLabel(self);
+        self.caudal_label.setText("Caudal");
+        self.box_quality_labels_grid.addWidget(self.caudal_label,2,0,1,1);
+        items_count+=1;
+
+
+        self.cranial_label = QLabel(self);
+        self.cranial_label.setText("Carnial");
+        self.box_quality_labels_grid.addWidget(self.cranial_label,3,0,1,1);
+        items_count+=1;
+
+        self.spinous_process_label = QLabel(self);
+        self.spinous_process_label.setText("Spinous process");
+        self.box_quality_labels_grid.addWidget(self.spinous_process_label,4,0,1,1);
+        items_count+=1;
+
+        self.symmetry_combo_box = QComboBox(self);
+        self.symmetry_combo_box.addItem("Totally symmetric");
+        self.symmetry_combo_box.addItem("Slightly asymmetric");
+        self.symmetry_combo_box.addItem("Extremely asymmetric");
+        self.box_quality_labels_grid.addWidget(self.symmetry_combo_box,0,1,1,1);
 
         self.exposure_combo_box = QComboBox(self);
         self.exposure_combo_box.addItem("Normal");
-        self.exposure_combo_box.addItem("Underexposed-mild");
-        self.exposure_combo_box.addItem("Underexposed-moderate");
-        self.exposure_combo_box.addItem("Underexposed-marked");
-        self.exposure_combo_box.addItem("Overexposed-mild");
-        self.exposure_combo_box.addItem("Overexposed-moderate");
-        self.exposure_combo_box.addItem("Overexposed-marked");
+        self.exposure_combo_box.addItem("Underexposed");
+        self.exposure_combo_box.addItem("Overexposed");
         self.box_quality_labels_grid.addWidget(self.exposure_combo_box, 1, 1, 1, 1);
+
+        self.caudal_combo_box = QComboBox(self);
+        self.caudal_combo_box.addItem("Accepted");
+        self.caudal_combo_box.addItem("Rejected");
+        self.box_quality_labels_grid.addWidget(self.caudal_combo_box, 2, 1, 1, 1);
+
+        self.cranial_combo_box = QComboBox(self);
+        self.cranial_combo_box.addItem("Accepted");
+        self.cranial_combo_box.addItem("Rejected");
+        self.box_quality_labels_grid.addWidget(self.cranial_combo_box, 3, 1, 1, 1);
+
+        self.spinous_process_combo_box = QComboBox(self);
+        self.spinous_process_combo_box.addItem("Straight");
+        self.spinous_process_combo_box.addItem("Rotated");
+        self.box_quality_labels_grid.addWidget(self.spinous_process_combo_box, 4, 1, 1, 1);
 
         self.box_quality_labels_params.setContentLayout(self.box_quality_labels_grid);
         menu_panel_layout.addWidget(self.box_quality_labels_params);
@@ -891,7 +917,7 @@ class MainWindow(QMainWindow):
         self.all_radiographs_list = QListWidget();
         self.all_radiographs_list.installEventFilter(self)
         self.radiograph_manipulation_box_grid_layout.addWidget(self.all_radiographs_list, items_count, 0, 1, 2);
-        self.all_radiographs_list.setFixedHeight(250)
+        self.all_radiographs_list.setFixedHeight(250);
         items_count+=1;
         
         self.box_radiograph_manipulation.setContentLayout(self.radiograph_manipulation_box_grid_layout);
@@ -1025,6 +1051,7 @@ class MainWindow(QMainWindow):
     def update_all_radiographs_segments_list(self, item = None):
         #First clear the list
         self.all_radiographs_list.clear();
+        self.__radiograph_list_map.clear();
         #Update the list of available already labeled radiographs
         dl = Class.data_pool_handler.data_list;
         dl = dict(sorted(dl.items()))
@@ -1038,6 +1065,7 @@ class MainWindow(QMainWindow):
                 list_item_meta.delete_radiograph_signal.connect(self.delete_radiograph_slot);
                 list_widget_item = QListWidgetItem(self.all_radiographs_list);
                 list_widget_item.text = r;
+                self.__radiograph_list_map[r] = list_widget_item;
                 list_widget_item.setSizeHint(list_item_meta.sizeHint())
                 self.all_radiographs_list.addItem(list_widget_item);
                 self.all_radiographs_list.setItemWidget(list_widget_item, list_item_meta);
@@ -1049,6 +1077,7 @@ class MainWindow(QMainWindow):
                 list_item_meta.delete_radiograph_signal.connect(self.delete_radiograph_slot);
                 list_widget_item = QListWidgetItem(self.all_radiographs_list);
                 list_widget_item.text = r;
+                self.__radiograph_list_map[r] = list_widget_item;
                 list_widget_item.setSizeHint(list_item_meta.sizeHint())
                 self.all_radiographs_list.addItem(list_widget_item);
                 self.all_radiographs_list.setItemWidget(list_widget_item, list_item_meta);
@@ -1059,6 +1088,7 @@ class MainWindow(QMainWindow):
         
 
         if item is not None:
+            
             item_on_list.setSelected(True)
             self.all_radiographs_list.scrollToItem(item_on_list, QtWidgets.QAbstractItemView.PositionAtCenter)
     
@@ -1073,12 +1103,16 @@ class MainWindow(QMainWindow):
             layers.append([lbl,name]);
 
         #Submit all layers and save meta data
-        Class.data_pool_handler.submit_label(layers, self.rotation_combo_box.currentText(), self.exposure_combo_box.currentText());
+        Class.data_pool_handler.submit_label(layers, [self.exposure_combo_box.currentText(), self.symmetry_combo_box.currentText(), 
+        self.cranial_combo_box.currentText(), self.caudal_combo_box.currentText(), self.spinous_process_combo_box.currentText()]);
             
         self.save_project(False);
         self.get_next_unlabeled();
         self.update_file_info_label();
         self.update_all_radiographs_segments_list();
+
+        item = self.__radiograph_list_map[Class.data_pool_handler.current_radiograph];
+        self.all_radiographs_list.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter);
     
     def closeEvent(self, event):
         #Save most recent project first.
@@ -1129,8 +1163,8 @@ class MainWindow(QMainWindow):
     def manual_segmentation_enable(self):
         #Enable regular layer as we don't want it to be affected.
         for i in range(self.radiograph_view.layer_count):
-            self.radiograph_view.set_gc_layer_active(False,i);
-            self.radiograph_view.set_gc_layers_visibility(False,i);
+            self.radiograph_view.set_gc_layer_active(False, i);
+            self.radiograph_view.set_gc_layers_visibility(False, i);
 
         self.radiograph_view.set_layer_active(True);
         
@@ -1158,6 +1192,7 @@ class MainWindow(QMainWindow):
 
         return_value = msgBox.exec();
         if return_value == QMessageBox.Yes:
+            
             radiograph_pixmap, mask_pixmap_list = Class.data_pool_handler.load_radiograph(txt);
             Class.data_pool_handler.current_radiograph = txt;
             self.radiograph_label.setText(f"Radiograph Name: {Class.data_pool_handler.current_radiograph}")
@@ -1180,6 +1215,8 @@ class MainWindow(QMainWindow):
                 
             
             self.radiograph_view.set_layer_opacity(self.opacity_layer_slider.value());
+            item = self.__radiograph_list_map[txt];
+            self.all_radiographs_list.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtCenter);
     
     def delete_radiograph_slot(self,txt):
         msgBox = QMessageBox()
@@ -1433,6 +1470,7 @@ class MainWindow(QMainWindow):
             self.get_next_unlabeled();
     
     def submit_label_clicked(self):
+        
         if self.radiograph_view.layer_count != 0:
             msgBox = QMessageBox()
             msgBox.setIcon(QMessageBox.Icon.Warning)
@@ -1502,7 +1540,7 @@ class MainWindow(QMainWindow):
             df = pd.read_pickle(mask_list[i]);
             names = [];
             for k in df.keys():
-                if k != "rot" and k !="exp":
+                if k != "rot" and k !="exp" and k!='misc':
                     names.append(k);
             mask_name_list.append(names);
         for i in range(len(mask_name_list)):
@@ -1684,6 +1722,13 @@ class MainWindow(QMainWindow):
     
     def redo_slot(self):
         self.radiograph_view.redo_event();
+    
+    # def keyPressEvent(self, event: QtGui.QKeyEvent):
+    #     #Increament pen size
+    #     if event.key() == QtCore.Qt.Key.Key_Enter or event.key() == QtCore.Qt.Key.Key_Return:
+    #         self.submit_label();
+            
+    #     super(MainWindow, self).keyPressEvent(event);
     
 
     #--------------------------------------------------------------

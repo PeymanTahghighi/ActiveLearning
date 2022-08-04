@@ -1,31 +1,19 @@
 from PyQt5 import QtCore
-from gevent import config
 from pandas.io import pickle
 from Utility import get_radiograph_label_meta, load_radiograph
-from PIL import ImageColor, Image
-import PIL
-from imgaug.augmenters.meta import Sometimes
 import numpy as np
 import os
-from numpy.lib.function_base import copy
-from numpy.lib.type_check import imag
 from scipy.sparse.construct import random
 from torch.utils.data import Dataset
-from torchvision import transforms
-import torchvision.transforms.functional as F
 import cv2
 from sklearn.utils import shuffle
 import torch
 from glob import glob
-import imgaug as ia
 import imgaug.augmenters as iaa
 from imgaug.augmentables.segmaps import SegmentationMapsOnImage
 import pandas as pd
 import pickle
-import seaborn as sns
-import matplotlib.pyplot as plt
 import Config
-import logging
 from torch.utils.data.sampler import Sampler
 from utils import JSD
 import random

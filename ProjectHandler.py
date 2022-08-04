@@ -1,14 +1,10 @@
 from copy import deepcopy
 from glob import glob
-from msilib.schema import Class
 from shutil import copyfile
 from PyQt5.QtWidgets import QMessageBox
-import cv2
 from pandas.io import pickle
-from pydicom import data
 from Utility import show_dialoge
 import pickle
-import pandas as pd
 from PyQt5.QtCore import QObject, pyqtSignal
 import os
 import Config

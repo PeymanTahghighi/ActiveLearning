@@ -1,9 +1,7 @@
-import sys
-from PyQt5 import QtGui
 from PyQt5 import QtWidgets
-from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5 import QtCore,  QtWidgets
 from PyQt5.QtCore import pyqtSignal
-from PyQt5.QtWidgets import QApplication, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMainWindow, QPushButton, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import  QGridLayout, QLabel, QPushButton, QWidget
 
 class LabelledRadListItem (QWidget):
     open_radiograph_signal = pyqtSignal(str);

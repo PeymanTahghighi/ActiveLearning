@@ -1,8 +1,4 @@
-import torch
 import numpy as np
-from sklearn.metrics import average_precision_score, roc_auc_score, precision_recall_curve, plot_precision_recall_curve, confusion_matrix
-import matplotlib.pyplot as plt
-from torch.functional import Tensor
 import Config
 
 def calculate_metrics(cm : np.array, columns, values):

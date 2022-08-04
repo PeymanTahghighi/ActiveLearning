@@ -1,17 +1,10 @@
 #==================================================================
 #==================================================================
-from shutil import copy
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtGui import QBrush, QColor, QCursor, QImage, QKeyEvent, QKeySequence, QPixmap, QPainter, QPen
-from PyQt5.QtWidgets import QGraphicsEllipseItem, QGraphicsScene, QGraphicsView, QGraphicsPixmapItem, QShortcut
 import numpy as np
 import cv2
-import math
-import copy
-from skimage.segmentation import flood_fill
-
-from numpy.typing import _16Bit
-
 from utils import pixmap_to_numpy
 #==================================================================
 #==================================================================
