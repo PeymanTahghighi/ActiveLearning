@@ -1497,6 +1497,7 @@ class MainWindow(QMainWindow):
         layer_count = dict();
         _, mask_list = get_radiograph_label_meta(os.path.sep.join([Config.PROJECT_ROOT,'images']), 
             os.path.sep.join([Config.PROJECT_ROOT,'labels']));
+        
         for i in range(len(mask_list)):
             df = pd.read_pickle(mask_list[i]);
             names = [];
@@ -1504,7 +1505,6 @@ class MainWindow(QMainWindow):
                 if k != "rot" and k !="exp":
                     names.append(k);
             mask_name_list.append(names);
-        
         for i in range(len(mask_name_list)):
             for j in range(len(mask_name_list[i])):
                 if mask_name_list[i][j] in layer_count:
