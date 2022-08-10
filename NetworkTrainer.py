@@ -23,7 +23,7 @@ from ignite.contrib.handlers.tensorboard_logger import *
 import Config
 import logging
 from torchmetrics import *
-#import ptvsd
+import ptvsd
 from StoppingStrategy import *
 from Loss import dice_loss, focal_loss, tversky_loss
 import Class
@@ -306,6 +306,8 @@ class NetworkTrainer(QObject):
                 #Load train meta to read layer names and number of classes
                 self.train_meta = pickle.load(open(os.path.sep.join([Config.PROJECT_ROOT,'ckpts', 'train.meta']),'rb'));
                 Config.NUM_CLASSES = self.train_meta[0];
+                if Config.NUM_CLASSES == 1:
+                    Config.MUTUAL_EXCLUSION = False;
                 self.model.set_num_classes(Config.NUM_CLASSES);
                 load_checkpoint(c, self.model);
                 #self.model.load_state_dict(checkpoint["state_dict"])
@@ -329,7 +331,7 @@ class NetworkTrainer(QObject):
         # if we haven't loaded a model yet or the loading wasn't successfull
         # we should not do anything and return immediately.
 
-        #ptvsd.debug_this_thread();
+        ptvsd.debug_this_thread();
         if self.__model_load_status:
             self.model.eval();
             with torch.no_grad():

@@ -10,6 +10,7 @@ import numpy as np
 from shutil import copyfile
 #import ptvsd
 #import ptvsd
+#import ptvsd
 import pydicom
 from pydicom import dcmread
 from Utility import *
@@ -96,6 +97,7 @@ class DataPoolHandler(QObject):
         we extract file name first
     '''
     def load_radiograph(self, name):
+        #ptvsd.debug_this_thread();
         mask_meta_path = name[:name.rfind('.')];
         mask_meta_path = os.path.sep.join([Config.PROJECT_ROOT, 'labels', mask_meta_path+".meta"])
         path = os.path.sep.join([Config.PROJECT_ROOT, 'images', name]);
