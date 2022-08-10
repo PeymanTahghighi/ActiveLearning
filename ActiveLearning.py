@@ -462,7 +462,8 @@ class NewProjectWindow(QWidget):
 
 
 class RenameWindow(QWidget):
-    confirm_new_name = pyqtSignal(str, str)
+    confirm_new_file_name = pyqtSignal(str, str)
+    confirm_new_layer_name = pyqtSignal(str, str)
     
     def __init__(self):
         super().__init__()
@@ -474,6 +475,7 @@ class RenameWindow(QWidget):
         self.height = 500;
         self.init_ui();
         self.orig_name = "";
+        #check if we are renaming file or layer
 
     def init_ui(self):
         centerPoint = QDesktopWidget().availableGeometry().center();
@@ -497,15 +499,22 @@ class RenameWindow(QWidget):
         self.window_grid_layout.addWidget(self.cancel, 1, 1, 1, 1);  
 
 
-    def show_window(self, txt):
+    def show_window(self, txt, type):
         self.adjustSize();
         self.show();
         self.orig_name = txt;
-        name = txt[:txt.rfind('.')];
+        if type=='file':
+            name = txt[:txt.rfind('.')];
+        else:
+            name = txt;
         self.new_name_text_box.setText(name);
+        self.__type = type;
     
     def confirm_clicked(self):
-        self.confirm_new_name.emit(self.orig_name, self.new_name_text_box.text());
+        if self.__type == 'file':
+            self.confirm_new_file_name.emit(self.orig_name, self.new_name_text_box.text());
+        elif self.__type == 'layer':
+            self.confirm_new_layer_name.emit(self.orig_name, self.new_name_text_box.text());
     
     def cancel_clicked(self):
         self.hide();
@@ -753,6 +762,7 @@ class MainWindow(QMainWindow):
         items_count+=1;
 
         self.segments_list = QListWidget(self);
+        self.segments_list.installEventFilter(self)
         self.layers_box_grid_layout.addWidget(self.segments_list,items_count,0,1,6);
         items_count+=1;
 
@@ -1001,7 +1011,8 @@ class MainWindow(QMainWindow):
         self.add_segmentation_button.clicked.connect(self.add_segmentation_clicked);
         self.segmentation_options_window.confirm_clicked_signal.connect(self.add_segmentation_slot);
         self.layer_selection_window.confirm_clicked_signal.connect(self.confirm_labels_clicked);
-        self.rename_window.confirm_new_name.connect(self.confirm_rename_slot);
+        self.rename_window.confirm_new_file_name.connect(self.confirm_rename_file_slot);
+        self.rename_window.confirm_new_layer_name.connect(self.confirm_rename_layer_slot);
         self.segmentation_box_tab.currentChanged.connect(self.segmentation_tab_changed);
         #-------------------------------------------------------------
 
@@ -1375,10 +1386,22 @@ class MainWindow(QMainWindow):
 
         self.opacity_layer_slider.setValue(255);
 
-    def confirm_rename_slot(self, orig_name, new_name):
-        if Class.data_pool_handler.rename(orig_name, new_name) is True:
+    def confirm_rename_file_slot(self, orig_name, new_name):
+        if Class.data_pool_handler.rename_file(orig_name, new_name) is True:
             show_dialoge(QMessageBox.Icon.Information, f"Renamed successfully.", "Info", QMessageBox.Ok);
             self.update_all_radiographs_segments_list(new_name);
+            self.rename_window.hide();  
+        else:
+            show_dialoge(QMessageBox.Icon.Critical, f"Rename failed, file name already exists.", "Info", QMessageBox.Ok);
+    
+    def confirm_rename_layer_slot(self, orig_name, new_name):
+        if Class.data_pool_handler.rename_layer(orig_name, new_name) is True:
+            show_dialoge(QMessageBox.Icon.Information, f"Renamed successfully.", "Info", QMessageBox.Ok);
+            idxs = self.segments_list.selectedIndexes();
+            for i in idxs:
+                itm = self.segments_list.itemFromIndex(i);
+                itm.setText(new_name)
+            
             self.rename_window.hide();  
         else:
             show_dialoge(QMessageBox.Icon.Critical, f"Rename failed, file name already exists.", "Info", QMessageBox.Ok);
@@ -1446,7 +1469,16 @@ class MainWindow(QMainWindow):
             if menu.exec_(event.globalPos()):
                 item = source.itemAt(event.pos());
                 
-                self.rename_window.show_window(item.text);
+                self.rename_window.show_window(item.text,'file');
+            return True
+        elif (event.type() == QtCore.QEvent.ContextMenu and
+            source is self.segments_list):
+            menu = QtWidgets.QMenu()
+            menu.addAction('Rename')
+            if menu.exec_(event.globalPos()):
+                item = source.itemAt(event.pos());
+                
+                self.rename_window.show_window(item.text(), 'layer');
             return True
         return super(QMainWindow, self).eventFilter(source, event)
 
