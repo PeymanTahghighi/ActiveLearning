@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import QObject,  pyqtSignal
 import numpy as np
 from shutil import copyfile
+import ptvsd
 #import ptvsd
 #import ptvsd
 #import ptvsd
@@ -213,7 +214,7 @@ class DataPoolHandler(QObject):
         self.__update_histograms(dc);
         self.load_finished_signal.emit(-1, show);
     
-    def rename(self, orig_name, new_name):
+    def rename_file(self, orig_name, new_name):
         
         #ptvsd.debug_this_thread();
         
@@ -253,7 +254,22 @@ class DataPoolHandler(QObject):
         self.save_project_signal.emit(False);
 
         return True;
-        pass
+    
+
+    def rename_layer(self, orig_name, new_name):
+        
+        ptvsd.debug_this_thread();
+        file_name = self.__current_radiograph[:self.__current_radiograph.rfind('.')];
+        meta_file = pickle.load(open(os.path.join(Config.PROJECT_ROOT, 'labels', f'{file_name}.meta'), 'rb'));
+        if new_name in meta_file.keys():
+            return False;
+        meta_file[new_name] = meta_file[orig_name];
+        meta_file.pop(orig_name);
+        pickle.dump(meta_file, open(os.path.join(Config.PROJECT_ROOT,'labels', f'{file_name}.meta'), 'wb'));
+        
+        self.save_project_signal.emit(False);
+
+        return True;
     
 
     #*****************
