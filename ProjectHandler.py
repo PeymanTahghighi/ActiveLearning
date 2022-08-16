@@ -178,21 +178,27 @@ class ProjectHandler(QObject):
                 Config.PROJECT_ROOT = self.__projects_root;
 
                 data_list = pickle.load(open(project_path,'rb'));
-                # data_list['71.jpeg'] = data_list['71_1.jpeg'];
-                #data_list.pop('199.png');
-                # meta = pickle.load(open('C:\\PhD\\Miscellaneous\\Spine and Ribs\\labels\\303.meta', 'rb'));
-                # meta['Ribs'] = meta['Vertebra'];
-                # meta.pop('Vertebra');
-                # pickle.dump(meta, open('C:\\PhD\\Miscellaneous\\Spine and Ribs\\labels\\303.meta', 'wb'))
-                # data_list['303.jpeg']
 
-
-                tmp_datalist, change = self.__check_for_unload_images(data_list);
+                tmp_datalist, change, unlabelled_new, labelled_new = self.__check_project(data_list);
 
                 if change is True:
                     msgBox = QMessageBox()
                     msgBox.setIcon(QMessageBox.Icon.Warning)
-                    msgBox.setText("Your project is not in sync with your local image database. Do you want to update your directory now?")
+                    msg = 'During project loading, ';
+                    if len(unlabelled_new) !=0 :
+                        msg+= 'Found labels for these unlabelled data: ';
+                        for u in unlabelled_new:
+                            msg +=f'\n{u}';
+
+                    msg+='\n';
+                    if len(labelled_new) !=0:
+                        msg+="Couldn't find labels for these images:";
+                        for u in labelled_new:
+                            msg +=f'\n{u}';
+                    
+                    msg += '\nDo you want to update project base?'
+
+                    msgBox.setText(msg)
                     msgBox.setWindowTitle("Confirmation")
                     msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No);
 
@@ -240,29 +246,34 @@ class ProjectHandler(QObject):
                 show_dialoge(QMessageBox.Icon.Critical, f"Project couldn't be found","Error", QMessageBox.Ok);
         pass
 
-    def __check_for_unload_images(self, data_list):
+    def __check_project(self, data_list):
         '''
             Here we check labels folder to check for images that
             have not been added to datalist of the project and 
-            ask user about them
+            ask user about them. Here, we also check if all labelled images 
+            have a respective meta file under labels folder and all unlabelled files don't.
         '''
 
         temp_data_list = deepcopy(data_list);
 
         img_lst = glob(os.path.sep.join([Config.PROJECT_ROOT, "images"]) + "\\*");
+        unlabelled_new = [];
+        labelled_new = [];
 
         change = False;
-        for l in img_lst:
-            file_name = os.path.basename(l);
-            path_to_meta = os.path.sep.join([Config.PROJECT_ROOT, 'labels', file_name[:file_name.rfind(".")] + ".meta"]);
-            if (file_name not in data_list and os.path.exists(path_to_meta)):
-                temp_data_list[file_name] = ['labeled', 'image'];
+        for l in data_list:
+            path_to_meta = os.path.sep.join([Config.PROJECT_ROOT, 'labels', l[:l.rfind(".")] + ".meta"]);
+            if (os.path.exists(path_to_meta) and data_list[l][0] =='unlabeled'):
+                temp_data_list[l] = ['labeled', data_list[l][1]];
                 change = True;
-            elif (file_name in data_list and data_list[file_name][0] == 'unlabeled' and os.path.exists(path_to_meta)):
-                temp_data_list[file_name][0] = 'labeled';
+                unlabelled_new.append(l);
+            elif (os.path.exists(path_to_meta) is False and data_list[l][0] =='labeled'):
+                temp_data_list[l][0] = 'unlabeled';
                 change = True;
+                labelled_new.append(l);
 
-        return temp_data_list, change;
+        return temp_data_list, change, unlabelled_new, labelled_new;
+
     
     def __relod_dataset(self):
         '''
