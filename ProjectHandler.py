@@ -162,9 +162,10 @@ class ProjectHandler(QObject):
     
     def open_project(self, path = None):
 
-        self.new_project_setup_signal.emit();
         #If no name given, open most recent project
         if path == None:
+            return False;
+            self.new_project_setup_signal.emit();
             mrp = open('mrp.uog','r');
             project_path = mrp.read();
             if os.path.exists(project_path):

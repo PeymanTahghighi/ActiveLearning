@@ -1077,7 +1077,7 @@ class MainWindow(QMainWindow):
         self.__radiograph_list_map.clear();
         #Update the list of available already labeled radiographs
         dl = Class.data_pool_handler.data_list;
-        dl = dict(sorted(dl.items()))
+        #dl = dict(sorted(dl.items()))
         for r in dl.keys():
             r_name = r[:r.rfind('.')];
             if dl[r][0] == 'labeled':
@@ -1662,11 +1662,19 @@ class MainWindow(QMainWindow):
         #Setup new project, remove every loaded item.
         self.radiograph_view.clear_whole();
         Class.data_pool_handler.clear_datalist();
+        
+
         Class.data_pool_handler.current_radiograph = "";
         self.segments_list.clear();
         self.all_radiographs_list.clear();
         self.update_file_info_label();
-    
+        paths = dict();
+        for i in range(len(Config.IMAGES_ORDER)):
+            paths[Config.IMAGES_ORDER[i][0]] =  ['unlabeled','image', 0];
+            copyfile(os.path.join(Config.STUDY_IMAGES_PATH, Config.IMAGES_ORDER[i][0]), os.path.join(Config.PROJECT_ROOT,'images', Config.IMAGES_ORDER[i][0]));
+        Class.data_pool_handler.set_data_list(paths);
+        self.load_finished(-1,True);
+
     def open_project_slot(self):
         options = QFileDialog.Options()
         dialog = QFileDialog()
@@ -1825,11 +1833,6 @@ if __name__=='__main__':
 
     #log = logging.getLogger('exception')
     sys.excepthook = my_handler
-    # sys.stdout = LoggerWriter(log.debug)
-    # sys.stderr = LoggerWriter(log.error)
-    #print('Test to standard out')
-    #raise Exception('Test to standard error')
-    #sys.stdout.close()
 
     Class.data_pool_handler.load_finished_signal.connect(window.load_finished);
     Class.data_pool_handler.save_project_signal.connect(window.save_project);

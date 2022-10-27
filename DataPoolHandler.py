@@ -8,10 +8,7 @@ from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtCore import QObject,  pyqtSignal
 import numpy as np
 from shutil import copyfile
-#import ptvsd
-#import ptvsd
-#import ptvsd
-##import ptvsd
+from glob import glob
 import pydicom
 from pydicom import dcmread
 from Utility import *
@@ -46,6 +43,9 @@ class DataPoolHandler(QObject):
     @property
     def data_list(self):
         return self.__data_list;
+    
+    def set_data_list(self, dl):
+        self.__data_list = dl;
     
     def get_current_radiograph_type(self):
         return self.__data_list[self.__current_radiograph][1];
@@ -128,6 +128,14 @@ class DataPoolHandler(QObject):
             self.__current_radiograph = unlabeled[r][0];
         elif Config.NEXT_SAMPLE_SELECTION == 'Similarity':
             pixmap = self.__get_next_similarity();
+        elif Config.NEXT_SAMPLE_SELECTION == 'Order':
+            #check images labeleld so far
+            meta_list = glob(os.path.join(Config.PROJECT_ROOT,'labels','\\*.meta'));
+            #if len(meta_list) == 0:
+            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[len(meta_list)][0]]);
+            pixmap = load_radiograph(p, unlabeled[len(meta_list)][1]);
+            self.__current_radiograph = unlabeled[len(meta_list)][0];
+
         
         return pixmap;
 
@@ -164,6 +172,13 @@ class DataPoolHandler(QObject):
             self.__current_radiograph = unlabeled[idx][0];
         elif Config.NEXT_SAMPLE_SELECTION == 'Similarity':
             pixmap = self.__get_next_similarity();
+        elif Config.NEXT_SAMPLE_SELECTION == 'Order':
+            #check images labeleld so far
+            meta_list = glob(os.path.join(Config.PROJECT_ROOT,'labels','\\*.meta'));
+            #if len(meta_list) == 0:
+            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[len(meta_list)][0]]);
+            pixmap = load_radiograph(p, unlabeled[len(meta_list)][1]);
+            self.__current_radiograph = unlabeled[len(meta_list)][0];
         return pixmap;
     
     def delete_radiograph(self, txt):
