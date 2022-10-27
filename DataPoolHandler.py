@@ -190,7 +190,7 @@ class DataPoolHandler(QObject):
         path_tmp = self.__current_radiograph.replace('\\','/');
         #save label to labels folder and save meta data about radiograph
         file_name = os.path.basename(path_tmp);
-        file_name = file_name[0:file_name.find('.')];
+        file_name = file_name[0:file_name.rfind('.')];
         data_dict = dict({'misc' : misc});
 
         for l in range(len(arr)):
