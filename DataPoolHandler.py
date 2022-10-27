@@ -24,6 +24,7 @@ from pathlib import Path
 class DataPoolHandler(QObject):
     load_finished_signal = pyqtSignal(int, bool);
     save_project_signal = pyqtSignal(bool);
+    ad_predict_button = pyqtSignal(bool);
 
     def __init__(self):
         super().__init__();
@@ -103,6 +104,8 @@ class DataPoolHandler(QObject):
         mask_meta_path = os.path.sep.join([Config.PROJECT_ROOT, 'labels', mask_meta_path+".meta"])
         path = os.path.sep.join([Config.PROJECT_ROOT, 'images', name]);
         radiograph_type = self.__data_list[name][1];
+
+        self.ad_predict_button.emit(Config.IMAGES_ORDER[name]);
         if os.path.exists(mask_meta_path):
             r,m = load_radiograph_masks(path,mask_meta_path, radiograph_type);
             return r, m;
@@ -135,6 +138,8 @@ class DataPoolHandler(QObject):
             p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[len(meta_list)][0]]);
             pixmap = load_radiograph(p, unlabeled[len(meta_list)][1]);
             self.__current_radiograph = unlabeled[len(meta_list)][0];
+
+            self.ad_predict_button.emit(Config.IMAGES_ORDER[unlabeled[len(meta_list)][0]]);
 
         
         return pixmap;
@@ -179,6 +184,8 @@ class DataPoolHandler(QObject):
             p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[len(meta_list)][0]]);
             pixmap = load_radiograph(p, unlabeled[len(meta_list)][1]);
             self.__current_radiograph = unlabeled[len(meta_list)][0];
+
+            self.ad_predict_button.emit(Config.IMAGES_ORDER[unlabeled[len(meta_list)][0]]);
         return pixmap;
     
     def delete_radiograph(self, txt):

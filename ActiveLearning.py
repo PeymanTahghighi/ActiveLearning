@@ -1657,6 +1657,9 @@ class MainWindow(QMainWindow):
     def new_project_slot(self):
         name = QFileDialog.getSaveFileName(window, 'Save File');
         window.confirm_new_project_clicked_signal.emit(name[0]);
+    
+    def ad_predict_slot(self, b):
+        self.predict_button.setEnabled(b);
 
     def setup_new_project_slot(self):
         #Setup new project, remove every loaded item.
@@ -1669,9 +1672,10 @@ class MainWindow(QMainWindow):
         self.all_radiographs_list.clear();
         self.update_file_info_label();
         paths = dict();
-        for i in range(len(Config.IMAGES_ORDER)):
-            paths[Config.IMAGES_ORDER[i][0]] =  ['unlabeled','image', 0];
-            copyfile(os.path.join(Config.STUDY_IMAGES_PATH, Config.IMAGES_ORDER[i][0]), os.path.join(Config.PROJECT_ROOT,'images', Config.IMAGES_ORDER[i][0]));
+        imgs = list(Config.IMAGES_ORDER.keys());
+        for i in range(len(imgs)):
+            paths[imgs[i]] =  ['unlabeled','image', 0];
+            copyfile(os.path.join(Config.STUDY_IMAGES_PATH, imgs[i]), os.path.join(Config.PROJECT_ROOT,'images', imgs[i]));
         Class.data_pool_handler.set_data_list(paths);
         self.load_finished(-1,True);
 
@@ -1868,6 +1872,7 @@ if __name__=='__main__':
     window.add_from_files_signal.connect(Class.data_pool_handler.add_from_files_slot);
     window.add_from_folder_signal.connect(Class.data_pool_handler.add_from_folder_slot);
     window.add_from_dicom_folder_signal.connect(Class.data_pool_handler.add_from_dicom_folder_slot);
+    Class.data_pool_handler.ad_predict_button.connect(window.ad_predict_slot);
 
     ret = Class.project_handler.open_project();
     

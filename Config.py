@@ -22,7 +22,7 @@ NEXT_SAMPLE_SELECTION = 'Order';
 MUTUAL_EXCLUSION = True;
 
 
-IMAGES_ORDER = [['1.jpeg',1], ['2.jpeg',0], ['3.jpeg',1], ['4.jpeg',0], ['5.jpeg',0], ['6.jpeg',1], ['7.jpeg',1], ['8.jpeg',0], ['9.jpeg',0], ['10.jpeg',1], ['11.jpeg',0]];
+IMAGES_ORDER = {'1.jpeg': 1, '2.jpeg' : 0, '3.jpeg' : 1, '4.jpeg':0, '5.jpeg':0, '6.jpeg':1, '7.jpeg':1, '8.jpeg':0, '9.jpeg':0, '10.jpeg':1, '11.jpeg':0};
 STUDY_IMAGES_PATH = "C:\\Users\\Admin\\OneDrive - University of Guelph\\Miscellaneous\\Nicole"
 
 
