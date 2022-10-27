@@ -20,6 +20,7 @@ PREDEFINED_NAMES = ['Vertebra', 'Spinous process', 'Ribs', 'Thoracic Limbs', 'Pu
 PROJECT_PREDEFINED_NAMES = [];
 NEXT_SAMPLE_SELECTION = 'Similarity';
 MUTUAL_EXCLUSION = True;
+IMAGES_ORDER = [['1.jpeg',1]];
 
 
  #Initialize transforms for training and validation
