@@ -253,7 +253,7 @@ class NetworkDataset(Dataset):
                 radiograph_image.shape[1], Config.NUM_CLASSES), dtype=np.uint8);
                 for k in range(Config.NUM_CLASSES):
                     #if the layer has been selected by user read data
-                    desc = df[layer_names[k-1]];
+                    desc = df[layer_names[k]];
                     mask_name = desc[2];
                     mask_image_layer = cv2.imread(os.path.sep.join([Config.PROJECT_ROOT, 'labels', mask_name]),cv2.IMREAD_UNCHANGED);
                     mask_image_layer = np.sum(mask_image_layer[:,:,:3], axis=2);
@@ -261,8 +261,8 @@ class NetworkDataset(Dataset):
                     #set the corresponding class to one
                     mask_image[marked_pixels == True,k] = 1;
 
-                    layer_weight[k-1][0] += np.sum(marked_pixels);
-                    layer_weight[k-1][1] += mask_image_layer.shape[0] * mask_image_layer.shape[1];
+                    layer_weight[k][0] += np.sum(marked_pixels);
+                    layer_weight[k][1] += mask_image_layer.shape[0] * mask_image_layer.shape[1];
             else:
                 mask_image = np.zeros(shape = (radiograph_image.shape[0],
                 radiograph_image.shape[1]), dtype=np.uint8);

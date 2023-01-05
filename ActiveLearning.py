@@ -1780,6 +1780,30 @@ class MainWindow(QMainWindow):
 if __name__=='__main__':
 
 
+    # pred = pickle.load(open('pred.dmp','rb'))
+    # gt = pickle.load(open('mask.dmp','rb'))
+    # pred = pred.reshape(pred.shape[0]*pred.shape[1]*pred.shape[2],pred.shape[3]) > 0.5;
+    # mask = gt.reshape(gt.shape[0]*gt.shape[1]*gt.shape[2],gt.shape[3]);
+    # cm = ConfusionMatrix(2,multilabel=True);
+    # res = cm(pred.to('cpu'),mask.to('cpu'));
+    # res = res.detach().cpu().numpy();
+    # all_f1 = 0;
+    # all_prec = 0;
+    # all_rec = 0;
+    # all_acc = 0;
+    # for i in range(res.shape[0]):
+    #     current_prec = res[i][0][0] / (res[i][0][0] + res[i][1][0]);
+    #     current_recall = res[i][0][0] / (res[i][0][0] + res[i][0][1]);
+    #     current_acc = (res[i][0][0] + res[i][1][1]) / (res[i][0][0] + res[i][1][0] + res[i][0][1] + res[i][1][1]);
+    #     current_f1 = (2*current_prec * current_recall) / (current_prec + current_recall);
+
+    #     all_f1 += current_f1;
+    #     all_acc += current_prec;
+    #     all_rec += current_recall;
+    #     all_prec += current_prec;
+    #pickle.dump(mask,open('mask.dmp','wb'))
+
+
     torch.autograd.set_detect_anomaly(False)
     torch.autograd.profiler.profile(False)
     torch.autograd.profiler.emit_nvtx(False)

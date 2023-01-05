@@ -2,6 +2,12 @@ from copy import deepcopy
 from msilib.schema import Class
 import pickle
 from PyQt5.QtCore import QObject
+import ptvsd
+#import ptvsd
+#import ptvsd
+#import ptvsd
+#import ptvsd
+#import ptvsd
 from Utility import load_radiograph
 from utils import load_checkpoint, save_checkpoint, save_samples
 import torch
@@ -27,6 +33,7 @@ from torchmetrics import *
 from StoppingStrategy import *
 from Loss import dice_loss, focal_loss, tversky_loss
 import Class
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 class NetworkTrainer(QObject):
     train_finsihed_signal = pyqtSignal();
@@ -63,25 +70,27 @@ class NetworkTrainer(QObject):
         return self.model, self.__model_load_status;
     
     def initialize_new_train(self, layer_names):
-        #ptvsd.debug_this_thread();
+        ptvsd.debug_this_thread();
         #set model_load_satus to false so next time we are going to use the model
         #we are forced to load the newly trained model
         self.__model_load_status = False;
         
         self.model.set_num_classes(Config.NUM_CLASSES);
 
-        self.optimizer = optim.RMSprop(self.model.parameters(), lr=Config.LEARNING_RATE, weight_decay=1e-4);
+        self.optimizer = optim.Adam(self.model.parameters(), lr=Config.LEARNING_RATE, weight_decay=1e-5);
+        self.scheduler = ReduceLROnPlateau(self.optimizer, patience=3, threshold=1e-3, verbose=True,factor=0.5);
 
-        self.precision_estimator = Precision(num_classes = 1 if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES, average='macro').to(Config.DEVICE);
-        self.recall_estimator = Recall(num_classes = 1 if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES, average='macro').to(Config.DEVICE);
-        self.accuracy_esimator = Accuracy(num_classes = 1 if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES, average='macro').to(Config.DEVICE);
-        self.f1_esimator = F1Score(num_classes = 1 if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES, average='macro').to(Config.DEVICE);
+        self.precision_estimator = Precision(num_classes = Config.NUM_CLASSES if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES, average='macro', multiclass=True).to(Config.DEVICE);
+        self.recall_estimator = Recall(num_classes = Config.NUM_CLASSES if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES, average='macro', multiclass=True).to(Config.DEVICE);
+        self.accuracy_esimator = Accuracy(num_classes = Config.NUM_CLASSES if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES, average='macro', multiclass=True).to(Config.DEVICE);
+        self.f1_esimator = F1Score(num_classes = Config.NUM_CLASSES if Config.MUTUAL_EXCLUSION == False else Config.NUM_CLASSES, average='macro', multiclass=True).to(Config.DEVICE);
+        self.conf_mat_estimator = ConfusionMatrix(num_classes=Config.NUM_CLASSES, multilabel=True);
 
         self.writer = SummaryWriter(os.path.sep.join([Config.PROJECT_ROOT,'experiments']));
 
         train_radiograph, train_masks, valid_radiographs, valid_masks = \
         self.train_valid_split.get(os.path.sep.join([Config.PROJECT_ROOT,'images']), 
-            os.path.sep.join([Config.PROJECT_ROOT,'labels']), 0.2, layer_names, Class.data_pool_handler.data_list);
+            os.path.sep.join([Config.PROJECT_ROOT,'labels']), 0.05, layer_names, Class.data_pool_handler.data_list);
         
         self.__clear_masks();
 
@@ -111,7 +120,7 @@ class NetworkTrainer(QObject):
         # weight_tensor = torch.tensor(weight_tensor,dtype=torch.float32);
         self.bce = nn.BCEWithLogitsLoss().to(Config.DEVICE);
 
-        self.stopping_strategy = CombinedTrainValid(1,5);
+        self.stopping_strategy = CombinedTrainValid(2,5);
 
         #self.model.reset_weights();
 
@@ -205,6 +214,7 @@ class NetworkTrainer(QObject):
                 self.scaler.update();
 
             pbar.set_description(('%10s' + '%10.4g') %(epoch, np.mean(epoch_loss)));
+        return np.mean(epoch_loss);
 
     def __eval_one_epoch(self, epoch, loader, model):
         epoch_loss = [];
@@ -227,11 +237,26 @@ class NetworkTrainer(QObject):
                 epoch_loss.append(loss.item());
                 
                 if Config.MUTUAL_EXCLUSION is False:
-                    pred = (torch.sigmoid(pred));
-                    prec = self.precision_estimator(pred.flatten(), mask.flatten().long());
-                    rec = self.recall_estimator(pred.flatten(), mask.flatten().long());
-                    acc = self.accuracy_esimator(pred.flatten(), mask.flatten().long());
-                    f1 = self.f1_esimator(pred.flatten(), mask.flatten().long());
+                    pass
+                    # pred = pred.reshape(pred.shape[0]*pred.shape[1]*pred.shape[2],pred.shape[3]) > 0.5;
+                    # mask = mask.reshape(mask.shape[0]*mask.shape[1]*mask.shape[2],mask.shape[3]);
+                    # cm = ConfusionMatrix(Config.NUM_CLASSES,multilabel=True);
+                    # res = cm(pred,mask);
+                    # res = res.detach().cpu().numpy();
+                    # all_f1 = 0;
+                    # all_prec = 0;
+                    # all_rec = 0;
+                    # all_acc = 0;
+                    # for i in range(res.shape[0]):
+                    #     current_prec = res[i][0][0] / (res[i][0][0] + res[i][1][0]);
+                    #     current_recall = res[i][0][0] / (res[i][0][0] + res[i][0][1]);
+                    #     current_acc = (res[i][0][0] + res[i][1][1]) / (res[i][0][0] + res[i][1][0] + res[i][0][1] + res[i][1][1]);
+                    #     current_f1 = (2*current_prec * current_recall) / (current_prec + current_recall);
+
+                    #     all_f1 += current_f1;
+                    #     all_acc += current_acc;
+                    #     all_rec += current_recall;
+                    #     all_prec += current_prec;
                 else:
                     pred = (torch.softmax(pred, dim = 1)).permute(0,2,3,1);
                     pred = torch.argmax(pred, dim = 3);
@@ -240,10 +265,10 @@ class NetworkTrainer(QObject):
                     acc = self.accuracy_esimator(pred.flatten(), mask.flatten().long());
                     f1 = self.f1_esimator(pred.flatten(), mask.flatten().long());
                 
-                total_prec.append(prec.item());
-                total_rec.append(rec.item());
-                total_f1.append(f1.item());
-                total_acc.append(acc.item());
+                total_prec.append(0);
+                total_rec.append(0);
+                total_f1.append(0);
+                total_acc.append(0);
 
                 pbar.set_description(('%10s' + '%10.4g'*5) % (epoch, np.mean(epoch_loss),
                 np.mean(total_prec), np.mean(total_rec), np.mean(total_f1), np.mean(total_acc)))
@@ -251,7 +276,7 @@ class NetworkTrainer(QObject):
         return np.mean(epoch_loss), np.mean(total_acc), np.mean(total_prec), np.mean(total_rec), np.mean(total_f1);
 
     def start_train_slot(self, layers_names):
-        ptvsd.debug_this_thread();
+        #ptvsd.debug_this_thread();
         logging.info("Start training...");
         self.initialize_new_train(layers_names);
 
@@ -261,21 +286,21 @@ class NetworkTrainer(QObject):
 
         while(True):
             self.model.train();
-            self.__train_one_epoch(e, self.train_loader,self.model, self.optimizer);
+            train_loss = self.__train_one_epoch(e, self.train_loader,self.model, self.optimizer);
 
             self.model.eval();
-            train_loss, train_acc, train_precision, train_recall, train_f1 = self.__eval_one_epoch(e, self.train_loader, self.model);
+            #train_loss, train_acc, train_precision, train_recall, train_f1 = self.__eval_one_epoch(e, self.train_loader, self.model);
 
             valid_loss, valid_acc, valid_precision, valid_recall, valid_f1 = self.__eval_one_epoch(e, self.valid_loader, self.model);
 
-            print(f"Epoch {e}\tLoss: {train_loss}\tPrecision: {train_precision}\tRecall: {train_recall}\tAccuracy: {train_acc}\tF1: {train_f1}");
-            print(f"Valid \tLoss: {valid_loss}\tPrecision: {valid_precision}\tRecall: {valid_recall}\tAccuracy: {valid_acc}\tF1: {valid_f1}");
+            #print(f"Epoch {e}\tLoss: {train_loss}\tPrecision: {train_precision}\tRecall: {train_recall}\tAccuracy: {train_acc}\tF1: {train_f1}");
+            print(f"Epoch {e} \tLoss: {valid_loss}\tPrecision: {valid_precision}\tRecall: {valid_recall}\tAccuracy: {valid_acc}\tF1: {valid_f1}");
 
             self.writer.add_scalar('training/loss', float(train_loss),e);
-            self.writer.add_scalar('training/precision', float(train_precision),e);
-            self.writer.add_scalar('training/recall', float(train_recall),e);
-            self.writer.add_scalar('training/accuracy', float(train_acc),e);
-            self.writer.add_scalar('training/f1', float(train_f1),e);
+            # self.writer.add_scalar('training/precision', float(train_precision),e);
+            # self.writer.add_scalar('training/recall', float(train_recall),e);
+            # self.writer.add_scalar('training/accuracy', float(train_acc),e);
+            # self.writer.add_scalar('training/f1', float(train_f1),e);
 
             self.writer.add_scalar('validation/loss', float(valid_loss),e);
             self.writer.add_scalar('validation/precision', float(valid_precision),e);
@@ -294,6 +319,7 @@ class NetworkTrainer(QObject):
                 break;
 
             e += 1;
+            self.scheduler.step(train_loss);
 
     def __load_model(self):
         
@@ -331,7 +357,7 @@ class NetworkTrainer(QObject):
         # if we haven't loaded a model yet or the loading wasn't successfull
         # we should not do anything and return immediately.
 
-     #   ptvsd.debug_this_thread();
+        #ptvsd.debug_this_thread();
         if self.__model_load_status:
             self.model.eval();
             with torch.no_grad():
