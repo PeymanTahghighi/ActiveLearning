@@ -23,7 +23,7 @@ from ignite.contrib.handlers.tensorboard_logger import *
 import Config
 import logging
 from torchmetrics import *
-#import ptvsd
+import ptvsd
 from StoppingStrategy import *
 from Loss import dice_loss, focal_loss, tversky_loss
 import Class
@@ -296,7 +296,7 @@ class NetworkTrainer(QObject):
             e += 1;
 
     def __load_model(self):
-        
+        ptvsd.debug_this_thread();
         lstdir = glob(os.path.sep.join([Config.PROJECT_ROOT,'ckpts']) + '/*');
         #Find checkpoint file based on extension
         found = False;
@@ -331,7 +331,7 @@ class NetworkTrainer(QObject):
         # if we haven't loaded a model yet or the loading wasn't successfull
         # we should not do anything and return immediately.
 
-     #   ptvsd.debug_this_thread();
+        ptvsd.debug_this_thread();
         if self.__model_load_status:
             self.model.eval();
             with torch.no_grad():

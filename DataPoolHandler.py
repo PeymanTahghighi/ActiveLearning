@@ -128,10 +128,15 @@ class DataPoolHandler(QObject):
             self.__current_radiograph = unlabeled[r][0];
         elif Config.NEXT_SAMPLE_SELECTION == 'Similarity':
             pixmap = self.__get_next_similarity();
+        else:
+            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[0][0]]);
+            pixmap = load_radiograph(p, unlabeled[0][1]);
+            self.__current_radiograph = unlabeled[0][0];
         
         return pixmap;
 
     def next_unlabeled(self):
+        #ptvsd.debug_this_thread();
         '''
             Here we apply our data selection strategy.
         '''
@@ -164,6 +169,10 @@ class DataPoolHandler(QObject):
             self.__current_radiograph = unlabeled[idx][0];
         elif Config.NEXT_SAMPLE_SELECTION == 'Similarity':
             pixmap = self.__get_next_similarity();
+        else:
+            p = os.path.sep.join([Config.PROJECT_ROOT, 'images', unlabeled[0][0]]);
+            pixmap = load_radiograph(p, unlabeled[0][1]);
+            self.__current_radiograph = unlabeled[0][0];
         return pixmap;
     
     def delete_radiograph(self, txt):

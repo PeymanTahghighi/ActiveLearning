@@ -691,9 +691,9 @@ class MainWindow(QMainWindow):
         #Quality
         items_count = 0;   
         
-        self.symmetry_label = QLabel(self);
-        self.symmetry_label.setText("Symmetric hemithoraces");
-        self.box_quality_labels_grid.addWidget(self.symmetry_label,0,0,1,1);
+        self.obliquity_label = QLabel(self);
+        self.obliquity_label.setText("Obliquity");
+        self.box_quality_labels_grid.addWidget(self.obliquity_label,0,0,1,1);
         items_count+=1;
 
         self.exposure_label = QLabel(self);
@@ -712,21 +712,11 @@ class MainWindow(QMainWindow):
         self.box_quality_labels_grid.addWidget(self.cranial_label,3,0,1,1);
         items_count+=1;
 
-        self.spinous_process_label = QLabel(self);
-        self.spinous_process_label.setText("Spinous process");
-        self.box_quality_labels_grid.addWidget(self.spinous_process_label,4,0,1,1);
-        items_count+=1;
-
-        self.quality_label = QLabel(self);
-        self.quality_label.setText("Overall quality");
-        self.box_quality_labels_grid.addWidget(self.quality_label,5,0,1,1);
-        items_count+=1;
-
-        self.symmetry_combo_box = QComboBox(self);
-        self.symmetry_combo_box.addItem("Totally symmetric");
-        self.symmetry_combo_box.addItem("Slightly asymmetric");
-        self.symmetry_combo_box.addItem("Extremely asymmetric");
-        self.box_quality_labels_grid.addWidget(self.symmetry_combo_box,0,1,1,1);
+        self.obliquity_combo_box = QComboBox(self);
+        self.obliquity_combo_box.addItem("None");
+        self.obliquity_combo_box.addItem("Mild");
+        self.obliquity_combo_box.addItem("Marked");
+        self.box_quality_labels_grid.addWidget(self.obliquity_combo_box,0,1,1,1);
 
         self.exposure_combo_box = QComboBox(self);
         self.exposure_combo_box.addItem("Normal");
@@ -743,18 +733,6 @@ class MainWindow(QMainWindow):
         self.cranial_combo_box.addItem("Accepted");
         self.cranial_combo_box.addItem("Rejected");
         self.box_quality_labels_grid.addWidget(self.cranial_combo_box, 3, 1, 1, 1);
-
-        self.spinous_process_combo_box = QComboBox(self);
-        self.spinous_process_combo_box.addItem("Straight");
-        self.spinous_process_combo_box.addItem("Rotated");
-        self.box_quality_labels_grid.addWidget(self.spinous_process_combo_box, 4, 1, 1, 1);
-
-        self.quality_combo_box = QComboBox(self);
-        self.quality_combo_box.addItem("Accept");
-        self.quality_combo_box.addItem("Reject");
-        self.quality_combo_box.addItem("Borderline-Reject");
-        self.quality_combo_box.addItem("Borderline-Accept");
-        self.box_quality_labels_grid.addWidget(self.quality_combo_box, 5, 1, 1, 1);
 
         self.box_quality_labels_params.setContentLayout(self.box_quality_labels_grid);
         menu_panel_layout.addWidget(self.box_quality_labels_params);
@@ -1035,7 +1013,7 @@ class MainWindow(QMainWindow):
         self.show();
 
     def get_next_unlabeled(self):
-        self.radiograph_view.clear_whole();
+        # self.radiograph_view.clear_whole();
         pixmap = Class.data_pool_handler.next_unlabeled();
         #Update name
         self.radiograph_label.setText(f"Radiograph Name: {Class.data_pool_handler.current_radiograph}")
@@ -1126,8 +1104,8 @@ class MainWindow(QMainWindow):
             layers.append([lbl,name]);
 
         #Submit all layers and save meta data
-        Class.data_pool_handler.submit_label(layers, [self.exposure_combo_box.currentText(), self.symmetry_combo_box.currentText(), 
-        self.cranial_combo_box.currentText(), self.caudal_combo_box.currentText(), self.spinous_process_combo_box.currentText(), self.quality_combo_box.currentText()]);
+        Class.data_pool_handler.submit_label(layers, [self.exposure_combo_box.currentText(), self.obliquity_combo_box.currentText(), 
+        self.cranial_combo_box.currentText(), self.caudal_combo_box.currentText(),]);
             
         self.save_project(False);
         self.get_next_unlabeled();
@@ -1515,19 +1493,19 @@ class MainWindow(QMainWindow):
     
     def submit_label_clicked(self):
         
-        if self.radiograph_view.layer_count != 0:
-            msgBox = QMessageBox()
-            msgBox.setIcon(QMessageBox.Icon.Warning)
-            msgBox.setText("Do you want to submit the label?")
-            msgBox.setWindowTitle("Submit Label Confirmation")
-            msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-            #msgBox.buttonClicked.connect(msgButtonClick)
+        #if self.radiograph_view.layer_count != 0:
+        msgBox = QMessageBox()
+        msgBox.setIcon(QMessageBox.Icon.Warning)
+        msgBox.setText("Do you want to submit the label?")
+        msgBox.setWindowTitle("Submit Label Confirmation")
+        msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        #msgBox.buttonClicked.connect(msgButtonClick)
 
-            return_value = msgBox.exec()
-            if return_value == QMessageBox.Yes:
-                self.submit_label();
-        else:
-            show_dialoge(QMessageBox.Icon.Critical, "No layer found, image should have at least one layer to submit.", "No layers found", QMessageBox.Ok);
+        return_value = msgBox.exec()
+        if return_value == QMessageBox.Yes:
+            self.submit_label();
+        # else:
+        #     show_dialoge(QMessageBox.Icon.Critical, "No layer found, image should have at least one layer to submit.", "No layers found", QMessageBox.Ok);
         pass
         
     def paint_clicked(self):
